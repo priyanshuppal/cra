@@ -106,6 +106,18 @@ public enum ToolbarAutoHide {
         if shown, followers.contains(where: { $0.contains(point) }) { return .bar }
         return .away
     }
+
+    /// When to look at the pointer again after a sample, given what the tracker asked for (`due`).
+    /// The strip and the keep zone reach `revealOutside` above the window, where the window sees no
+    /// moves: a pointer that left through the top edge is often last seen in that band, keeping a bar
+    /// that is out with no look asked for, and nothing would ever hide it. While it is there, look
+    /// again after `revealDwell`, until it reads as away or comes back into the window.
+    public static func nextLook(due: TimeInterval?, pointer: Pointer, at point: CGPoint?, container: CGRect, shown: Bool,
+                                now: TimeInterval) -> TimeInterval? {
+        if let due { return due }
+        guard shown, pointer == .strip || pointer == .bar, let point, !container.contains(point) else { return nil }
+        return now + revealDwell
+    }
 }
 
 /// Whether the floating toolbar is out, from pointer samples, keyboard focus and the clock.

@@ -35,5 +35,25 @@ expect-log toolbar timers:5: out=0 look=0 looks=1
 wait 2
 cra://debug?toolbar=timers:6
 expect-log toolbar timers:6: out=0 look=0 looks=0
+# Out through the window's top edge: 2 pt above the window is still the strip's band, which keeps the bar, and no
+# move comes from up there. The bar used to stay out until the pointer came back; it is looked at again while
+# the pointer is in the band, and goes once the pointer is further out.
+cra://debug?toolbar=move:700,4
+wait 0.5
+cra://debug?toolbar=timers:7
+expect-log toolbar timers:7: out=1 look=0 looks=1
+cra://debug?toolbar=move:700,-2
+expect-log toolbar move:700,-2: out=1 look=1
+wait 0.5
+cra://debug?toolbar=timers:8
+expect-log toolbar timers:8: out=1 look=1 looks=[1-9][0-9]*
+cra://debug?toolbar=move:700,-40
+expect-log toolbar move:700,-40: out=1 look=1
+wait 1
+cra://debug?toolbar=timers:9
+expect-log toolbar timers:9: out=0 look=0 looks=[1-9][0-9]*
+wait 2
+cra://debug?toolbar=timers:10
+expect-log toolbar timers:10: out=0 look=0 looks=0
 cra://debug?toolbar=gone
 expect-log toolbar gone: floats=1 out=0 inset=0 page=[0-9]+/[0-9]+ short=0 barHidden=1 look=0

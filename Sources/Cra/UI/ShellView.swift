@@ -893,6 +893,10 @@ final class ShellView: NSView {
     private func syncFloatingToolbar() {
         if let card = floatingCard {
             reveal(card, toolbarTracker.shown, animated: false)
+            // The layout changed under a resting pointer (the sidebar toggled from the keyboard, a zoom,
+            // full screen, the find bar closed with Esc while the pointer rested on it): the bar may no
+            // longer be under it, and no move says so. One look, while Cra is the active app as for moves.
+            if toolbarTracker.shown, NSApp.isActive { toolbarHoldEnded() }
         } else if toolbarTracker != ToolbarAutoHideTracker() {
             let wasOut = toolbarTracker.shown
             toolbarTracker.reset()
@@ -911,8 +915,18 @@ final class ShellView: NSView {
                 MainActor.assumeIsolated { self?.toolbarHoldEnded() }
             })
         }
-        if floatingCard == nil { stopToolbarLook() }
+        if floatingCard == nil { stopToolbarLook(); watchToolbarHold([]) }
         syncToolbarFocusWatch()
+    }
+
+    /// Out of its window (closed): the app-wide observers go, and come back with the next layout in one.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        guard newWindow == nil else { return }
+        for o in toolbarActivation { NotificationCenter.default.removeObserver(o) }
+        toolbarActivation = []
+        watchToolbarHold([])
+        stopToolbarLook()
     }
 
     private func toolbarActivationChanged() {
@@ -1011,7 +1025,8 @@ final class ShellView: NSView {
     func sampleToolbarPointer() {
         guard let card = floatingCard else { stopToolbarLook(); watchToolbarHold([]); return }
         let where_: ToolbarAutoHide.Pointer
-        if let p = toolbarPointer() {
+        let p = toolbarPointer()
+        if let p {
             where_ = ToolbarAutoHide.classify(p, card: convert(card.frame, from: card.superview), container: bounds,
                                               barHeight: card.toolbarHeight, shown: toolbarTracker.shown,
                                               followers: toolbarFollowerFrames())
@@ -1027,7 +1042,10 @@ final class ShellView: NSView {
         // A drag gives no moves to the shell and may end anywhere, its mouse-up unseen (a window drag,
         // a drop outside): look again shortly while a button is down, which is only while the hand is on it.
         if pressed, due == nil { due = toolbarNow() + 0.25 }
-        scheduleToolbarLook(due)
+        // Out past the window's top but still in the band the strip reaches: no moves come from there,
+        // so look again until the pointer reads as away (or comes back in).
+        scheduleToolbarLook(ToolbarAutoHide.nextLook(due: due, pointer: where_, at: p, container: bounds,
+                                                     shown: toolbarTracker.shown, now: toolbarNow()))
     }
 
     /// Where the bar's followers are, in this view's coordinates.
