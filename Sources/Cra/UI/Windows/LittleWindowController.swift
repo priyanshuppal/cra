@@ -93,10 +93,13 @@ enum LittlePalette {
     /// 1.168's flat #0C091C is gone (#329).
     static let stripLeft = NSColor(LittleStripTones.stripLeft)
     static let stripRight = NSColor(LittleStripTones.stripRight)
-    /// The address pill is a lighter wash over the strip (about #38394A on the left, #43394B on the
-    /// right, which is white at 9–10 %), so it follows the gradient. The hover is not measured.
-    static let pill = Color.white.opacity(0.09)
-    static let pillHover = Color.white.opacity(0.14)
+    /// The address pill is a lighter wash over the strip, so it follows the gradient: Arc's asset
+    /// catalogue values (CraCore LittleStripTones.pill / pillHover), dark as the rest of the strip.
+    static let pill = wash(LittleStripTones.pill(dark: true))
+    static let pillHover = wash(LittleStripTones.pillHover(dark: true))
+    private static func wash(_ w: LittleStripTones.Wash) -> Color {
+        Color(.displayP3, red: w.p3.r, green: w.p3.g, blue: w.p3.b, opacity: w.alpha)
+    }
     /// The open padlock for an http page (Arc's `hasInsecureContext`): orange on a pale orange wash.
     /// From the capture attached to #330: strokes about #E93700, and a tile that reads #4B3B45 over the
     /// pill's #3A3A4B, which is that orange at about 10 %.

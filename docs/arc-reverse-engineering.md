@@ -751,12 +751,18 @@ Arc 1.172.1 (build 90370), re-measured on 10 Nov 2026 from 2x window captures
 - the strip is a gradient, not #0C091C: #242438 at the left end of a 1185 pt window, #26243A,
   #292839 and #2C2439 between, #312339 at the right end, identical after switching spaces. The
   pill is a lighter wash over it (about #38394A on the left, #43394B on the right, white at
-  9–10 %). The traffic lights are grey discs (about #6A6A74) until the pointer is over the
+  9–10 %; Arc 1.174.3's asset catalogue settles it, below). The traffic lights are grey discs (about #6A6A74) until the pointer is over the
   group, with the window in front;
 - the pill reads the host only (`cra-measure.lvh.me` for `http://cra-measure.lvh.me:47110/page?e=link1`),
   and for a page that isn't served over https an open padlock (orange, strokes about #E93700) on a
   22 pt tile, 4 pt in from the pill's left and top, orange at about 10 %, replaces the magnifier;
   while a first response is awaited the magnifier is back. Cra: `LittleAddress` (CraCore).
+- [O] the pill's fill and hover are named colours in Arc 1.174.3's
+  `ARC_LittleBrowser.bundle/Contents/Resources/Assets.car` (`assetutil --info`, 26 Nov 2026), Display P3:
+  `LittleBrowserCommandBarPlaceholderBackground` is (0.98, 0.984, 1) at 0.10 in DarkAqua and (0.055, 0.059,
+  0.063) at 0.06 otherwise; `…Hovered` is the same inks at 0.15 and 0.10. Little Arc draws the strip dark,
+  so the pill is the DarkAqua pair. Cra had guessed white 0.09 and 0.14. Cra: `LittleStripTones.pill` /
+  `pillHover` (CraCore).
 
 ### Live re-fit against Victor's full-screen screenshots (24 Oct, 20:21)
 
