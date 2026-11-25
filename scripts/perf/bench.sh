@@ -3,7 +3,8 @@
 # with its own data folder, from outside the app. Two launches:
 #   idle:    memory (phys_footprint over the process tree) at 1, 10 and 20 tabs, 3 minutes after the
 #            20th ("settled"), and 30 s after closing back to 1; idle CPU and wakeups at 1 and 20 tabs.
-#            No HitchMonitor here: its 4 ms ping alone is ~250 wakeups/s.
+#            No HitchMonitor here: its 4 ms ping alone is ~250 wakeups/s. Each idle window runs with
+#            App Nap and timer coalescing allowed (cra://debug?appNap=allow), as a backgrounded user's Cra.
 #   latency: new tab -> first contentful paint, tab switch -> shown (visibilitychange, then 2
 #            requestAnimationFrame), each timed from the command's HitchMonitor mark.
 #   procs:   20 tabs, then each process's footprint and --type (procs.txt), and again a minute later
@@ -49,10 +50,14 @@ run() {
   snap() { echo "{\"at\":\"$1\",\"t\":$(python3 -I -c 'import time;print(time.time())'),\"m\":$("$FP" $PID)}" >> "$OUT/result.jsonl"; }
   if [ "$MODE" = idle ]; then
     send "cra://open?url=$PAGE?n=1"; sleep 30; snap mem1
+    send "cra://debug?appNap=allow"; sleep 1
     snap idle1-start; sleep "$IDLE"; snap idle1-end
+    send "cra://debug?appNap=hold"
     for i in $(seq 2 10); do send "cra://open?url=$PAGE?n=$i"; sleep 1.5; done; sleep 10; snap mem10
     for i in $(seq 11 20); do send "cra://open?url=$PAGE?n=$i"; sleep 1.5; done; sleep 15; snap mem20
+    send "cra://debug?appNap=allow"; sleep 1
     snap idle20-start; sleep "$IDLE"; snap idle20-end
+    send "cra://debug?appNap=hold"
     sleep 150; snap mem20settled; "$B/procs.sh" "$FP" $PID > "$OUT/procs20.txt"
     for i in $(seq 1 19); do send "cra://action/closeTab"; sleep 0.4; done; sleep 30; snap memback1
   elif [ "$MODE" = procs ]; then

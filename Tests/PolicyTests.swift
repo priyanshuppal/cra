@@ -20,6 +20,7 @@ enum PolicyTests {
         devToolsToggle()
         featureFlags()
         liveScheduler()
+        try commandFileReadsAppendedLinesOnce()
         try webHandoff()
         try defaultBrowserPicker()
         try iPhoneDefaultBrowser()
@@ -214,6 +215,66 @@ enum PolicyTests {
         expect(dropped, "work whose handle was let go still runs")
         expect(!cancelled, "cancelled work doesn't run")
         _ = handle
+    }
+
+    /// CRA_COMMAND_FILE is watched, not polled: each complete line appended reaches Cra once and in order,
+    /// a line written in two writes arrives whole, and the file can be created late, truncated or replaced.
+    @MainActor
+    private static func commandFileReadsAppendedLinesOnce() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("cra-command-file-\(getpid())")
+        try? fm.removeItem(at: dir)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("commands").path
+        var got: [String] = []
+        let reader = CommandFileReader(path: path, clock: LiveScheduler()) { got.append($0) }
+        defer { reader.cancel() }
+
+        func append(_ text: String) {
+            guard let h = FileHandle(forWritingAtPath: path) else { return expect(false, "the command file opens for writing") }
+            h.seekToEndOfFile()
+            h.write(Data(text.utf8))
+            h.closeFile()
+        }
+        var expected: [String] = []
+        // Runs the real run loop until the lines arrive (3 s at most), then a little longer for repeats.
+        func step(_ name: String, _ lines: [String]) {
+            expected += lines
+            let until = Date().addingTimeInterval(3)
+            while got.count < expected.count, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            expect(got == expected, "command file, \(name): expected \(expected), got \(got)")
+        }
+
+        step("no file yet", [])
+        fm.createFile(atPath: path, contents: Data("cra://a\n".utf8))
+        step("created after the reader started", ["cra://a"])
+        append("cra://b\ncra://c")
+        step("a partial line waits", ["cra://b"])
+        append("-rest\n")
+        step("its end arrives", ["cra://c-rest"])
+        append("cra://d\n")
+        append("cra://e\n\n")
+        append("cra://f\n")
+        step("several writes", ["cra://d", "cra://e", "cra://f"])
+
+        FileHandle(forWritingAtPath: path)?.truncateFile(atOffset: 0)
+        step("truncated", [])
+        append("cra://g\n")
+        step("written after truncating", ["cra://g"])
+
+        try fm.removeItem(atPath: path)
+        step("deleted", [])
+        fm.createFile(atPath: path, contents: Data("cra://h\n".utf8))
+        step("re-created", ["cra://h"])
+
+        let replacement = dir.appendingPathComponent("replacement").path
+        fm.createFile(atPath: replacement, contents: Data("cra://i\n".utf8))
+        expect(rename(replacement, path) == 0, "the command file is replaced")
+        step("replaced", ["cra://i"])
+        append("cra://j\n")
+        step("appended to the replacement", ["cra://j"])
     }
 
     private static func featureFlags() {

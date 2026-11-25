@@ -24,8 +24,13 @@ python3 scripts/perf/report.py build/perf/gate/*-[0-9]*
   another Space gives them none: no switch is ever "shown" (report.py's "switches shown" row) and the
   GPU process reads as a hidden browser's. `caffeinate -d`, a display that's on, and rerun when a
   switch is missing.
-- **Idle rows need a quiet window.** The command-file poll (6.7 wakeups/s) is in every test copy and
-  not in users' Cra; HitchMonitor (~250/s) is only in the latency launch.
+- **Idle rows need a quiet window.** HitchMonitor (~250 wakeups/s) is only in the latency launch.
+  `CRA_COMMAND_FILE` is watched (a dispatch source), not polled, so it wakes Cra only when a command
+  is written. A `CRA_TEST_BACKGROUND` copy holds an activity that turns off App Nap and timer
+  coalescing; `cra://debug?appNap=allow` ends it and `appNap=hold` takes it again, and bench.sh
+  allows App Nap for each idle window only, as a backgrounded user's Cra. Idle rows measured
+  before 26 Nov 2026 (0.15 s command-file poll, ~6.7 wakeups/s, and no App Nap) aren't comparable
+  with later ones: rerun the before build with this test-mode code (the point above).
 - **A count that went down is not a speed-up** until a timed run shows it. Changes that saved nothing
   measurable come out again (the sidebar press's frame-clock wake, purge on freeze: below).
 
