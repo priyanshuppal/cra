@@ -20,6 +20,7 @@ enum PolicyTests {
         devToolsToggle()
         featureFlags()
         liveScheduler()
+        liveSchedulerToleranceIsTenPercent()
         try webHandoff()
         try defaultBrowserPicker()
         try iPhoneDefaultBrowser()
@@ -214,6 +215,25 @@ enum PolicyTests {
         expect(dropped, "work whose handle was let go still runs")
         expect(!cancelled, "cancelled work doesn't run")
         _ = handle
+    }
+
+    /// Repeating timers get a tenth of their interval as tolerance, so the background passes
+    /// (tab sleep each minute, live folders every 15 s) coalesce with other wake-ups; a sub-second
+    /// poll keeps exact timing, and a timer with tolerance still fires.
+    @MainActor
+    private static func liveSchedulerToleranceIsTenPercent() {
+        expect(LiveScheduler.tolerance(every: 60) == 6, "a one-minute pass gets 6 s of slack")
+        expect(LiveScheduler.tolerance(every: 1800) == 180, "the auto-archive pass gets 3 minutes")
+        expect(LiveScheduler.tolerance(every: 15) == 1.5, "the live folder pass gets 1.5 s")
+        expect(LiveScheduler.tolerance(every: 1) == 0.1, "a one-second timer gets a tenth")
+        expect(LiveScheduler.tolerance(every: 0.15) == 0, "the command file's sub-second poll keeps exact timing")
+        let clock = LiveScheduler()
+        var fires = 0
+        let repeating = clock.every(0.05) { fires += 1 }
+        let until = Date().addingTimeInterval(2)
+        while fires < 2, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        repeating.cancel()
+        expect(fires >= 2, "a repeating timer keeps firing")
     }
 
     private static func featureFlags() {
