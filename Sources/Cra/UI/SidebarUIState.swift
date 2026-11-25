@@ -139,10 +139,6 @@ final class SidebarUIState {
         spaceSettling = false
         HitchMonitor.mark("swipe-settled")
     }
-    /// Dia settles pages with a zero-bounce spring that picks up the release speed.
-    var spaceSettleAnimation: Animation {
-        .interpolatingSpring(duration: 0.4, bounce: 0, initialVelocity: spaceSettleVelocity)
-    }
     /// Tabs picked with ⌘/⇧-click; closing acts on all of them.
     var multiSelection: Set<UUID> = []
     /// The tabs with a Peek, open or waiting on them (#242), and the peeked page's favicon, which
