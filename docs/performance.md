@@ -21,10 +21,14 @@ and `perf-boundary` allows Perf calls only in the files listed under "Removing i
 `CraCEF` only in `PerfCEF.swift`.
 
 Data flows one way. The main thread records small facts under one lock. The watchdog thread
-(2 Hz) writes a hang file itself while the main thread is blocked. One serial utility queue
-samples processes and the Mac every 5 s, writes the black box every 60 s and the history every
-15 minutes, and builds the export. Nothing on the main thread does file I/O, JSON encoding or
-libproc calls; once every 5 s it counts tabs and asks the visible page for its long tasks.
+(2 Hz while the main thread works) writes a hang file itself while the main thread is blocked;
+once it finds the run loop asleep at two looks in a row it parks until the loop next wakes, so an
+idle Cra isn't woken for it. One serial utility queue samples processes and the Mac every 5 s
+(in the background too, for the runaway watch), writes the black box every 60 s and the history
+every 15 minutes, and builds the export. Nothing on the main thread does file I/O, JSON encoding
+or libproc calls; once every 5 s it counts tabs and, while Cra is active and a main window is
+on screen (`PerfSessionRules.readsPage`), asks the visible page for its long tasks. The page
+keeps counting meanwhile, and one read when Cra comes back takes what it counted.
 
 ## What a pass is
 
@@ -77,7 +81,7 @@ each ask after the back-off) and candidates passed over without being asked (`sl
 loading, DevTools, Picture in Picture…, once per page and reason; cra.log names the site); and
 timings for tab switch (without the page created for a tab that had none, which is page
 create), page create, page load, waking a slept tab and framing an extension's popup. In the visible page,
-read with the long tasks every 5 s and never in background tabs: long tasks, Chromium's long
+read with the long tasks every 5 s while Cra is active and on screen, and never in background tabs: long tasks, Chromium's long
 animation frames (`longFrames`, `longestFrameMs`: a passive observer, it asks for no frames) and
 the frames its videos played and dropped (`getVideoPlaybackQuality`). Renderer crashes, hangs
 and failed loads with their codes. Start-up phases (store loaded, Chromium started, windows shown, then the first page shown,

@@ -52,6 +52,11 @@ public enum PerfSessionRules {
     /// that hands its URLs over and quits must not replace the running one's files.
     public static func writesFiles(owner: Bool, recording: Bool) -> Bool { owner && recording }
 
+    /// The 5 s sample reads the current page's long tasks and frames only while Cra is active and
+    /// a main window is on screen. Asking wakes the renderer and the DevTools pipe; the page keeps
+    /// counting meanwhile, so the read when Cra comes back loses nothing but timing.
+    public static func readsPage(active: Bool, onScreen: Bool) -> Bool { active && onScreen }
+
     /// The session before this one: the marker it left (abnormal), else the one history recorded
     /// as quitting normally, else none (the first launch, or recording was off).
     public static func previous(marker: PerfSessionMarker?, history: PerfHistory) -> PerfPreviousSession? {

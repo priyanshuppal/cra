@@ -142,7 +142,7 @@ final class PerfRecorder: @unchecked Sendable {
                                  onStall: { [weak self] ms, end, mode in self?.passEnded(ms: ms, at: end, mode: mode) },
                                  onSlow: { [weak self] ms, start, mode in self?.slowPassSeen(ms: ms, at: start, mode: mode) },
                                  onHang: { [weak self] ms, start, mode in self?.hangStarted(ms: ms, at: start, mode: mode) },
-                                 onWatch: { [weak self] in self?.watchSlowSample() })
+                                 onWatch: { [weak self] in self?.watchSlowSample() ?? false })
         observer = o
         o.start()
         let t = DispatchSource.makeTimerSource(queue: queue)
@@ -258,15 +258,18 @@ final class PerfRecorder: @unchecked Sendable {
         if slowSample == nil { lock.withLock { state.slowPass?.stackNote = "sample did not start" } }
     }
 
-    /// The watchdog thread, twice a second: the slow pass's stack once `sample` has ended.
-    private func watchSlowSample() {
-        guard let sample = slowSample, sample.ended else { return }
+    /// The watchdog thread, twice a second: the slow pass's stack once `sample` has ended. True
+    /// while it still waits for one, so the watchdog doesn't park before taking it.
+    private func watchSlowSample() -> Bool {
+        guard let sample = slowSample else { return false }
+        guard sample.ended else { return true }
         slowSample = nil
         let stack = sample.stack()
         lock.withLock {
             state.slowPass?.stack = stack
             state.slowPass?.stackNote = stack.isEmpty ? "sample gave no main thread" : nil
         }
+        return false
     }
 
     /// One second of `/usr/bin/sample` on Cra, every 10 ms. Started with posix_spawn and checked

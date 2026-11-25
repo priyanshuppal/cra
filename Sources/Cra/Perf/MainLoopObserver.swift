@@ -10,7 +10,9 @@ import os
 /// uncontended lock per callback.
 ///
 /// A long pass is seen while it lasts by a watchdog thread (2 Hz), which reports it from its own
-/// thread (the main thread is the one that's stuck): once at `slowMs`, again at `hangMs`.
+/// thread (the main thread is the one that's stuck): once at `slowMs`, again at `hangMs`. When it
+/// finds the run loop asleep two looks in a row, with nothing of its own left to watch, it parks
+/// until the loop wakes, so an idle Cra isn't woken twice a second for the recorder.
 final class MainLoopObserver: @unchecked Sendable {
     struct Drained {
         var passes: LogHistogram
@@ -18,6 +20,8 @@ final class MainLoopObserver: @unchecked Sendable {
         /// Estimated main-thread time spent in the callbacks, and the watchdog thread's CPU time.
         var observerNs: UInt64
         var watchdogNs: UInt64
+        /// Times the watchdog parked because the run loop slept.
+        var watchdogParks: Int
     }
 
     private struct Shared {
@@ -34,6 +38,9 @@ final class MainLoopObserver: @unchecked Sendable {
         /// -[NSApplication run] before the loop's first pass, where no observer sees it.
         var launching = true
         var watchdogNs: UInt64 = 0
+        /// The watchdog waits on `wake`; the next callback that starts a pass signals it.
+        var parked = false
+        var parks = 0
         var stopped = false
     }
 
@@ -42,6 +49,7 @@ final class MainLoopObserver: @unchecked Sendable {
     /// the work under it.
     private let lock = os_unfair_lock_t.allocate(capacity: 1)
     private let state = UnsafeMutablePointer<Shared>.allocate(capacity: 1)
+    private let wake = DispatchSemaphore(value: 0)
     private var observers: [CFRunLoopObserver] = []
     /// Main thread only: callbacks until the next timed one.
     private var untilTimed = MainLoopObserver.timedEvery
@@ -54,14 +62,15 @@ final class MainLoopObserver: @unchecked Sendable {
     private let onStall: (_ ms: Double, _ endedAt: UInt64, _ mode: String) -> Void
     private let onSlow: (_ ms: Double, _ passStart: UInt64, _ mode: String) -> Void
     private let onHang: (_ ms: Double, _ passStart: UInt64, _ mode: String) -> Void
-    private let onWatch: () -> Void
+    private let onWatch: () -> Bool
 
     /// `onStall` runs on the main thread when a pass of `stallMs` or more ends; `onSlow` and
     /// `onHang` on the watchdog thread, once per pass that reaches `slowMs` (below `hangMs`) and
-    /// `hangMs` while it still lasts; `onWatch` there at every look (twice a second).
+    /// `hangMs` while it still lasts; `onWatch` there at every look (twice a second), returning
+    /// whether it still waits for something, which keeps the watchdog from parking.
     init(stallMs: Double, slowMs: Double, hangMs: Double, onStall: @escaping (Double, UInt64, String) -> Void,
          onSlow: @escaping (Double, UInt64, String) -> Void, onHang: @escaping (Double, UInt64, String) -> Void,
-         onWatch: @escaping () -> Void) {
+         onWatch: @escaping () -> Bool) {
         self.stallMs = stallMs
         self.slowMs = slowMs
         self.hangMs = hangMs
@@ -114,14 +123,22 @@ final class MainLoopObserver: @unchecked Sendable {
     func stop() {
         for o in observers { CFRunLoopObserverInvalidate(o); CFRunLoopRemoveObserver(CFRunLoopGetMain(), o, .commonModes) }
         observers = []
-        withLock { $0.stopped = true; $0.passStart = 0 }
+        let parked = withLock { (s: inout Shared) -> Bool in
+            s.stopped = true
+            s.passStart = 0
+            defer { s.parked = false }
+            return s.parked
+        }
+        if parked { wake.signal() }
     }
 
     /// What was measured since the last call.
     func drain() -> Drained {
         withLock { s in
             let estimate = s.sampled > 0 ? s.sampledNs / UInt64(s.sampled) * UInt64(s.callbacks) : 0
-            let d = Drained(passes: s.passes, callbacks: s.callbacks, observerNs: estimate &+ s.stallReportNs, watchdogNs: s.watchdogNs)
+            let d = Drained(passes: s.passes, callbacks: s.callbacks, observerNs: estimate &+ s.stallReportNs, watchdogNs: s.watchdogNs,
+                            watchdogParks: s.parks)
+            s.parks = 0
             s.passes = LogHistogram()
             s.callbacks = 0
             s.sampledNs = 0
@@ -158,7 +175,11 @@ final class MainLoopObserver: @unchecked Sendable {
             s.pointee.passStart = asleep ? 0 : now
             if asleep { s.pointee.launching = false }
         }
+        // A pass is running (any callback but before-waiting leaves one): the watchdog looks again.
+        let unpark = s.pointee.parked && s.pointee.passStart != 0
+        if unpark { s.pointee.parked = false }
         os_unfair_lock_unlock(lock)
+        if unpark { wake.signal() }
         // Timed and multiplied out: the bookkeeping every callback does, a clock read and a lock.
         if timed {
             let cost = Perf.now() &- now
@@ -178,13 +199,30 @@ final class MainLoopObserver: @unchecked Sendable {
     }
 
     private func watch() {
+        var idleLooks = 0, busy = false
         while true {
             usleep(500_000)
             let start = Self.threadCPU()
+            // Asleep at two looks in a row with nothing left to watch: wait for the next pass
+            // instead of looking. Set under the lock, so a pass that starts after this look finds
+            // `parked` and signals; one that started before it is seen here and nothing parks.
+            let park = withLock { (s: inout Shared) -> Bool in
+                guard !s.stopped, s.passStart == 0, idleLooks >= 1, !busy else { return false }
+                s.parked = true
+                s.parks += 1
+                return true
+            }
+            if park {
+                wake.wait()
+                idleLooks = 0
+                withLock { $0.watchdogNs += 2_000 }   // the wakeup
+                continue   // the pass that woke us is half a second old at the next look, as before
+            }
             let (passStart, stopped, reported, slow, launch) = withLock {
                 ($0.passStart, $0.stopped, $0.reportedPass, $0.reportedSlow, $0.launching)
             }
             if stopped { return }
+            idleLooks = passStart == 0 ? idleLooks + 1 : 0
             if passStart != 0, passStart != reported {
                 let ms = Double(Perf.now() &- passStart) / 1e6
                 let mode = { launch ? "launch" : Self.currentMode() }
@@ -196,7 +234,7 @@ final class MainLoopObserver: @unchecked Sendable {
                     onSlow(ms, passStart, mode())
                 }
             }
-            onWatch()
+            busy = onWatch()
             let cost = Self.threadCPU() &- start
             withLock { $0.watchdogNs += cost + 2_000 }   // + the wakeup itself, about 2 µs
         }
