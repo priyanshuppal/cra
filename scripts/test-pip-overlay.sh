@@ -11,7 +11,7 @@ xcrun swiftc -swift-version 5 -parse-as-library ${CRA_TEST_SWIFTC_FLAGS:-} -I "$
   -Xlinker -rpath -Xlinker "$TEST_DIR" \
   Sources/Cra/UI/PictureInPicture/PictureInPictureChrome.swift Sources/Cra/UI/PictureInPicture/PictureInPictureControls.swift \
   Sources/Cra/UI/PictureInPicture/ChromiumPictureInPictureSeal.swift Sources/Cra/Services/TestGesture.swift \
-  Packages/CraCore/Sources/CraCore/PictureInPicture*.swift \
+  Packages/CraCore/Sources/CraCore/PictureInPicture*.swift Packages/CraCore/Sources/CraCore/FrameRate.swift Sources/Cra/UI/MotionLink.swift \
   Tests/PictureInPictureSupport/AppServices.swift Tests/PictureInPictureOverlayTests.swift \
   -o "$TEST_DIR/pip-overlay-tests"
 CRA_DATA_DIR="$TEST_DIR" "$TEST_DIR/pip-overlay-tests"

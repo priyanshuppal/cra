@@ -75,8 +75,7 @@ final class DocumentPictureInPictureSpring {
     private func fly(_ window: NSWindow, to origin: NSPoint) {
         let id = ObjectIdentifier(window)
         flights[id]?.link.invalidate()
-        let link = window.displayLink(target: self, selector: #selector(tick(_:)))
-        link.add(to: .main, forMode: .common)
+        let link = window.motionLink(target: self, selector: #selector(tick(_:)))
         flights[id] = (window, PictureInPictureFlight(from: window.frame.origin, velocity: .zero, to: origin), link)
         lastTick[id] = 0
     }

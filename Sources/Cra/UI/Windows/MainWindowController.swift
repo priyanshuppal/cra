@@ -4012,8 +4012,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         let clock = SettleClock(started: CACurrentMediaTime())
         librarySettleSpring = (clock: clock, from: r, velocity: velocity, target: target)
         if librarySettleLink == nil {
-            let link = shell.displayLink(target: self, selector: #selector(stepLibrarySettle))
-            link.add(to: .main, forMode: .common)
+            let link = shell.motionLink(target: self, selector: #selector(stepLibrarySettle))
             librarySettleLink = link
         }
         // A display link gives no frames while the display sleeps: a settle that never drew lands at once, or the

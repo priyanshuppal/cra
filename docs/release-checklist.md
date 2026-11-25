@@ -231,6 +231,11 @@ built release app with a test profile. Note anything that fails in the release's
   mouse: the top row stays selected (Return opens it); type, and the rows that change under the
   still pointer leave the top row selected too; move the pointer a little and the row under it
   takes the selection. HoverGateTests pins the rule; this checks AppKit's events on a real screen.
+- **120 Hz, drag autoscroll:** on a ProMotion display (or a 120 Hz monitor), drag a tab to the bottom edge of a
+  pinned list longer than the window and hold it there: the list glides on every frame with no judder, at the same
+  speed as on a 60 Hz screen. DragAutoscrollTests pins the speed and the step per frame; no scenario holds a real drag.
+- **120 Hz, download flight:** on a ProMotion display, download a file from near the top of a tall window: the glyph's
+  arc is a smooth curve over the apex, with no straight runs or corners, and lands on the Library button as on 60 Hz.
 
 ### Peek, Little Window, Picture in Picture, split view, Capture
 

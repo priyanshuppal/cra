@@ -669,8 +669,7 @@ final class CaptureView: NSView {
 
     private func run() {
         guard link == nil else { return }
-        let l = displayLink(target: self, selector: #selector(step))
-        l.add(to: .main, forMode: .common)
+        let l = motionLink(target: self, selector: #selector(step))
         link = l
         lastStep = CACurrentMediaTime()
     }
