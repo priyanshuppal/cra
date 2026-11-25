@@ -157,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // As ⌘T: the command bar makes the new tab, Esc leaves the window empty.
             if startOnNewTab { DispatchQueue.main.async { [weak self] in self?.main.openCommandBar(.newTab) } }
         }
-        SparePages.shared.mayMake = { SparePage.keeps(pressure: PerfSystemSample.pressure(level: PerfSystemSampler.pressureLevel())) }
+        SparePages.shared.mayMake = { [weak self] in SparePage.keeps(pressure: self?.memoryPressure() ?? .unknown) }
         // Arc's toast after Clear and Delete Folder, with ⌘Z in a key cap (CloseItemsCompletionToast).
         store.onCloseItems = { [weak self] kind, count in
             let toast = CloseItemsToast.text(kind: kind, count: count)
@@ -377,6 +377,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// The level the last pass read, so cra.log says when it changes (#275: a report couldn't
     /// tell a late timer from a level that read normal).
     private var lastPressure: PerfSystemSample.Pressure?
+    /// The level `cra://debug?memoryPressure=` holds in place of macOS's until `memoryPressure=system`,
+    /// so a scenario doesn't depend on how full the Mac running it is.
+    private var memoryPressureOverride: PerfSystemSample.Pressure?
+
+    /// The memory pressure the passes and SparePages go by: the debug override, else macOS's.
+    private func memoryPressure() -> PerfSystemSample.Pressure {
+        memoryPressureOverride ?? PerfSystemSample.pressure(level: PerfSystemSampler.pressureLevel())
+    }
 
     /// Waking the Mac runs a pass at once (#275): the timer doesn't fire in system sleep, and
     /// one that is late, or held back by App Nap, left a full Mac alone for 24 minutes. The
@@ -424,7 +432,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // Pages already slept hold a browser and a window each for the session: past the budget they close (#616).
             w.browsers.closeSleptPages()
         }
-        let pressure = PerfSystemSample.pressure(level: PerfSystemSampler.pressureLevel())
+        let pressure = memoryPressure()
         if let lastPressure, lastPressure != pressure { CraLog.note("memory pressure \(lastPressure.rawValue) → \(pressure.rawValue)") }
         let previous = lastPressure
         lastPressure = pressure
@@ -2908,10 +2916,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // What waking the Mac does (#275), without sleeping it: the cards re-read, one pass.
             if dict["sleep"] != nil { systemWillSleep(); return }
             if dict["wake"] != nil { systemDidWake(); return }
-            // One memory-pressure sweep as if macOS reported this level (warning, critical), without
-            // filling memory or waiting out the last sweep. The setting still decides for tabs; the
-            // spare page goes either way.
+            // Memory pressure as if macOS reported this level (normal, warning, critical) from now
+            // until `memoryPressure=system`, for the passes and for making spare pages, and one sweep
+            // at once, without filling memory or waiting out the last sweep. The setting still decides
+            // for tabs; the spare page goes either way.
+            if dict["memoryPressure"] == "system" { memoryPressureOverride = nil; return }
             if let level = dict["memoryPressure"].flatMap(PerfSystemSample.Pressure.init(rawValue:)) {
+                memoryPressureOverride = level
                 lastPressureSweep = nil
                 sweepForMemoryPressure(level, from: nil)
                 return

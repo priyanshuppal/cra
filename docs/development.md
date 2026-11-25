@@ -250,8 +250,9 @@ sidebar link, `pageJS=<js>` runs script in the focused page, `installExtension=<
 `removeExtension=<id>`, `extensionAction=<id>`, `sidePanelJS=<js>` (the value in the extension side panel's
 page, to cra.log), `fullscreen=1|0`, `appActive=1|0` (the sidebar drawn as if
 Cra were in front or behind, e.g. the download bin's dimming), `windowSize=1280x800`,
-`snapshot=<ViewClass[,n]>&out=<png>`, `sleepTabs=<seconds>` (the 10 tabs used last too), `memoryPressure=warning|critical` (one
-memory-pressure sweep at that level, if Settings ▸ Tabs has it on), `sleep=1` (what the Mac going to
+`snapshot=<ViewClass[,n]>&out=<png>`, `sleepTabs=<seconds>` (the 10 tabs used last too), `memoryPressure=normal|warning|critical` (Cra
+goes by that level instead of the Mac's until `memoryPressure=system`, for tab sleeping and spare pages, and
+sweeps once at it at once; tabs only if Settings ▸ Tabs has it on), `sleep=1` (what the Mac going to
 sleep does: notes Chromium's audio service), `wake=1` (what waking the Mac does: the now-playing cards
 re-read their tabs' sound, a tab-sleeping pass runs and cra.log says whether the audio service lived), `stall=<ms>` (blocks the main
 thread), `perfReport=<path>` (the recorder's perf.json now), `systemAppearance=light|dark|system`
