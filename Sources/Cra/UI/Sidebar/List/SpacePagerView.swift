@@ -19,7 +19,7 @@ final class SpacePagerView: NSView {
     private var placedIndex = 0
     private var placedWidth: CGFloat = 0
     private var placedSwipe: CGFloat = 0
-    /// Release speed for the next settle, relative to the distance left (Dia's spring).
+    /// Release speed for the next settle, relative to the distance left (Arc's spring, LibrarySwipe).
     private var pendingVelocity: Double = 0
     private var ownSettle: Int?
     private var spring: Spring?
@@ -172,7 +172,8 @@ final class SpacePagerView: NSView {
         }
     }
 
-    /// Dia settles pages with a zero-bounce spring that picks up the release speed.
+    /// Settles on a page with Arc's critically damped spring (LibrarySwipe.response 0.205 s, damping ratio 1),
+    /// which picks up the release speed.
     private func settle(index: Int, from x: CGFloat) {
         // CASpringAnimation's initialVelocity: the distance to travel per second.
         spring = Spring(index: index, clock: SettleClock(started: CACurrentMediaTime()), x0: x, v0: -CGFloat(pendingVelocity) * x)

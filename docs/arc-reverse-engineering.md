@@ -3552,9 +3552,9 @@ tap with a real Shift key held around them; the space read from each window's `s
   137 = 1 makes a synthetic wheel report `isDirectionInvertedFromDevice`.
 - Cra: `WheelSpaceSwitch` (CraCore) with distance > 1 line, pause 0.05 s, cooldown 0.25 s, direction XOR inverted; the window controller's
   scroll monitor feeds it non-precise horizontal wheels over the sidebar (docked or floating, not incognito). A
-  step focuses the space on Cra's usual space-change spring (Dia's 0.4 s, slower than Arc's here), or slides the
-  Library in or out like its button. On the Spaces page the cards take the wheel first (10 pt per line, as in Arc)
-  and the wheel leaves the Library only at their end.
+  step focuses the space on Cra's usual space-change spring (Arc's settle, `LibrarySwipe.response` 0.205 s with
+  damping ratio 1), or slides the Library in or out like its button. On the Spaces page the cards take the wheel
+  first (10 pt per line, as in Arc) and the wheel leaves the Library only at their end.
 
 ## Mouse back and forward buttons (Arc 1.172.1, 7 Nov 2026, issue #233, static: main binary arm64)
 
