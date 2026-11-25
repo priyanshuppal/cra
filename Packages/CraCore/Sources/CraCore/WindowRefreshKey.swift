@@ -16,9 +16,13 @@ public struct WindowRefreshKey: Equatable {
     /// SidebarStore.revision: tree edits (a tab opened, closed or moved, a split made). A plain
     /// pick doesn't move it; its change reaches the window through `session`.
     public let revision: Int
+    /// The window shows Create a Space (SidebarStore.isMakingSpace): its selected tab and panes read
+    /// as none until it leaves, with nothing in its session changed. A new space previewing the theme
+    /// the window's space already has left every other input equal, and the old page stayed up.
+    public let makingSpace: Bool
 
     /// `panes` gives the tabs a window shows (SidebarStore.visiblePaneTabIDs of its focused space).
-    public init(window id: UUID, prefs: WindowPrefs, revision: Int, panes: (WindowSession) -> [UUID]) {
+    public init(window id: UUID, prefs: WindowPrefs, revision: Int, makingSpace: Bool, panes: (WindowSession) -> [UUID]) {
         let own = prefs.windows.first { $0.id == id }
         session = own.map {
             var s = $0
@@ -30,5 +34,6 @@ public struct WindowRefreshKey: Equatable {
         let mine = Set(own.map(panes) ?? [])
         sharedPanes = mine.isEmpty ? [] : mine.intersection(prefs.windows.filter { $0.id != id }.flatMap(panes))
         self.revision = revision
+        self.makingSpace = makingSpace
     }
 }

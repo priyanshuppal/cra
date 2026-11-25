@@ -654,6 +654,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
             let store = self.store
             return RefreshInputs(
                 key: WindowRefreshKey(window: windowID, prefs: store.prefs, revision: store.revision,
+                                      makingSpace: store.isMakingSpace(window: windowID),
                                       panes: { store.visiblePaneTabIDs(in: store.focusedSpaceID(window: $0.id), window: $0.id) }),
                 settings: store.settings, spaces: store.spaces, isDark: SystemAppearance.shared.isDark,
                 modelAvailable: TidyTabsService.shared.modelAvailable)
