@@ -287,8 +287,7 @@ final class InstantLinksService {
             if let split = store.createSplit(with: ids, at: ids[0]) { first = store.paneID(for: ids[0], in: split) ?? ids[0] }
         case .folder where !store.isBlank(space: space):
             if let pinned = store.space(space)?.pinnedContainerID {
-                let folder = store.createFolder(named: title, in: pinned)
-                store.moveItems(ids, to: folder.id, index: nil)
+                store.createFolder(named: title, in: pinned, holding: ids)
             }
         default:
             break
