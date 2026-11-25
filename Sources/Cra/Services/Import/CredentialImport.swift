@@ -249,6 +249,8 @@ enum CredentialImport {
     @discardableResult
     static func stage(_ creds: ImportedCredentials, profiles: ImportProfileMap = ImportProfileMap()) -> Bool {
         guard !creds.isEmpty else { return true }
+        // The next launch looks at Cookies again after it writes these rows.
+        if !creds.cookies.isEmpty { try? FileManager.default.removeItem(at: cookiesRepairedFile) }
         guard let key = SafeStorage.key else { return false }
         var pending = (try? Data(contentsOf: pendingFile)).flatMap { try? JSONDecoder().decode(Pending.self, from: $0) } ?? Pending()
         for var c in creds.cookies {
@@ -422,11 +424,20 @@ enum CredentialImport {
     /// to the stale imported cookie, and at the next launch Chromium dropped the stale
     /// duplicate with a DELETE that hit the fresh row instead: signed out after every
     /// restart. Drops imported rows Chromium has since replaced and fixes the rest.
-    /// Called from main.swift before Chromium starts.
+    /// Called from main.swift before Chromium starts. Only imports from before the fix wrote
+    /// such rows and Chromium never does, so once a launch finds none or repairs them,
+    /// `cookiesRepairedFile` says so and later launches don't scan the table; staging
+    /// imported cookies removes it.
     static func repairImportedCookies(profileDir: URL) {
-        guard let db = open(profileDir.appendingPathComponent("Cookies")) else { return }
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: cookiesRepairedFile.path),
+              let db = open(profileDir.appendingPathComponent("Cookies")) else { return }
         defer { sqlite3_close(db) }
-        guard !SQLite.rows(db, "SELECT 1 FROM cookies WHERE top_frame_site_key = '' AND has_cross_site_ancestor = 0 LIMIT 1").isEmpty else { return }
+        let markRepaired = { _ = fm.createFile(atPath: cookiesRepairedFile.path, contents: Data()) }
+        // No row at all is a query that failed (busy, no such table): look again next launch.
+        guard let stale = SQLite.rows(db, "SELECT EXISTS (SELECT 1 FROM cookies WHERE top_frame_site_key = '' AND has_cross_site_ancestor = 0) AS stale")
+            .first?["stale"] as? Int64 else { return }
+        guard stale != 0 else { markRepaired(); return }
         let ok = transaction(db) {
             sqlite3_exec(db, """
                 DELETE FROM cookies WHERE top_frame_site_key = '' AND has_cross_site_ancestor = 0 AND EXISTS (
@@ -436,8 +447,11 @@ enum CredentialImport {
                 UPDATE cookies SET has_cross_site_ancestor = 1 WHERE top_frame_site_key = '' AND has_cross_site_ancestor = 0;
                 """, nil, nil, nil) == SQLITE_OK
         }
-        if !ok { NSLog("Cra: could not repair imported cookies") }
+        if ok { markRepaired() } else { NSLog("Cra: could not repair imported cookies") }
     }
+
+    /// Present once Default's Cookies holds no row repairImportedCookies would fix.
+    static var cookiesRepairedFile: URL { AppPaths.file("imported-cookies-repaired") }
 
     private static func insertLogins(_ logins: [Pending.Login], into url: URL) -> Bool {
         guard let db = open(url) else { return false }
