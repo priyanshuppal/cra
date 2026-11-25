@@ -274,9 +274,8 @@ final class SidebarStore {
         rankingFile.saveNow(ranking)
     }
 
-    private func touch() {
-        pruneEmptyGroups()
-        revision &+= 1
+    private func touch(reshaped: Bool = true) {
+        if pruneEmptyGroups() || reshaped { revision &+= 1 }
         saveSoon()
         saveArchiveIfChanged()
         changedHere()
@@ -424,7 +423,7 @@ final class SidebarStore {
                 updateWindow(w.id) { $0.selectedTabPerSpace[s] = nil }
             }
         }
-        if wasOpen { selectTab(id, window: window) }
+        if wasOpen { selectTab(id, window: window, reshaped: true) }
     }
 
     /// A Blank Window's "Move to…" (Arc 1.172): its tabs go to the top of the space's Today in
@@ -741,7 +740,7 @@ final class SidebarStore {
         let at = index ?? (settings.newTabsAtTop && !pinned ? 0 : p.children.count)
         p.children.insert(tab.id, at: min(max(0, at), p.children.count))
         items[parentID] = p
-        if select { selectTab(tab.id, window: window) } else { touch() }
+        if select { selectTab(tab.id, window: window, reshaped: true) } else { touch() }
         if leavesIncognito, let window {
             activeWindowID = window
             pageLeftIncognito(window)
@@ -768,10 +767,13 @@ final class SidebarStore {
     /// Back's `.close`: the tab goes to the archive like ⌘W and `referrer` is shown in `window`.
     func closeToReferrer(_ id: UUID, referrer: UUID, window: UUID?) {
         archiveTab(id, reason: .manual)
-        selectTab(referrer, window: window)
+        selectTab(referrer, window: window, reshaped: true)
     }
 
-    func selectTab(_ id: UUID?, window: UUID? = nil) {
+    /// `reshaped`: the caller changed the tree just before (a tab made, moved or restored) and
+    /// leaves the revision bump to this pick. A plain pick changes only the window's session, which
+    /// each window reads through its WindowRefreshKey: bumping `revision` for it refreshed every window.
+    func selectTab(_ id: UUID?, window: UUID? = nil, reshaped: Bool = false) {
         var w = self.window(window).id
         // A space's tab picked while an incognito or Blank Window is in front (a link from
         // another app, the Library) opens in the last normal window.
@@ -785,6 +787,7 @@ final class SidebarStore {
         let sid = spaceID(ofItem: id, window: w) ?? focused
         // Incognito and Blank Windows show only their own tabs, and only there.
         guard isStandalone(window: w) ? sid == focused : !isStandalone(space: sid) else { return }
+        let session = self.window(w)
         updateWindow(w) {
             $0.focusedSpaceID = sid
             $0.selectedTabPerSpace[sid] = id
@@ -797,7 +800,9 @@ final class SidebarStore {
             ranking.recentlySwitchedToTabs[id] = dates
             rankingFile.save(ranking)
         }
-        touch()
+        // The tab already shown, picked again: nothing in the session changes, and the window's refresh
+        // (which shows its page if it has none) runs only for the revision, as before.
+        touch(reshaped: reshaped || self.window(w) == session)
     }
 
     /// A tab coming on screen, picked or handed the selection by a close: it's read and last
@@ -1422,7 +1427,7 @@ final class SidebarStore {
         var sp = items[split.id]!
         sp.children.insert(tab.id, at: after ? idx + 1 : idx)
         items[split.id] = sp
-        selectTab(tab.id, window: window)
+        selectTab(tab.id, window: window, reshaped: true)
         return tab
     }
 
@@ -1802,7 +1807,7 @@ final class SidebarStore {
         guard items[id]?.isTab == true, spaces[sid] != nil, spaceID(ofItem: moving) != sid else { return false }
         moveTab(moving, toSpace: sid, following: self.window(window).id)
         guard spaceID(ofItem: moving) == sid else { return false }
-        selectTab(id, window: window)
+        selectTab(id, window: window, reshaped: true)
         return true
     }
 
@@ -1946,6 +1951,13 @@ final class SidebarStore {
         let w = untrackedWindow(window)
         if let space { return w.selectedTabPerSpace[space] == id }
         return Self.openTab(in: w, firstSpace: spaceOrder.first) == id
+    }
+
+    /// `selectedTabID(in:window:)` without observing the window list, for a view that observes the
+    /// pick on its own: every write to `prefs` (any window's pick, a window moved) reaches a reader of it.
+    func untrackedSelectedTabID(in spaceID: UUID, window: UUID?) -> UUID? {
+        guard let id = untrackedWindow(window).selectedTabPerSpace[spaceID], items[id]?.isTab == true else { return nil }
+        return id
     }
 
     private func untrackedWindow(_ id: UUID?) -> WindowSession {
@@ -2387,7 +2399,7 @@ final class SidebarStore {
         let index = folder != nil ? min(entry.sourceIndex ?? 0, p.children.count) : entry.wasPinned ? p.children.count : 0
         p.children.insert(it.id, at: index)
         items[parent] = p
-        if select { selectTab(it.id) } else { touch() }
+        if select { selectTab(it.id, reshaped: true) } else { touch() }
         return it
     }
 
@@ -2477,7 +2489,7 @@ final class SidebarStore {
             if let url, !url.isEmpty, url != "about:blank" {
                 updateTab(id, url: url, title: title)
             }
-            selectTab(id, window: w)
+            selectTab(id, window: w, reshaped: true)
         case .archived(let id):
             restoreArchived(id)
         case .peek:
@@ -2653,7 +2665,10 @@ final class SidebarStore {
     }
 
     /// A group whose last tab closed or moved out goes too (Arc never shows an empty header).
-    private func pruneEmptyGroups() {
+    /// Whether it removed any.
+    @discardableResult
+    private func pruneEmptyGroups() -> Bool {
+        var pruned = false
         for space in spaces.values {
             guard var t = items[space.todayContainerID] else { continue }
             let empty = t.children.filter { items[$0].map { $0.isTabGroup && $0.children.isEmpty } ?? false }
@@ -2661,7 +2676,9 @@ final class SidebarStore {
             t.children.removeAll { empty.contains($0) }
             items[t.id] = t
             for g in empty { items[g] = nil }
+            pruned = true
         }
+        return pruned
     }
 
     /// Arc's Today tab menu "Archive Tabs Below": every Today row under this one (splits and

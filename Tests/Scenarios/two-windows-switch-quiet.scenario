@@ -1,0 +1,44 @@
+# Tab switches in one window leave the other window alone. Every window observed all of windows.json and the
+# sidebar's revision, and a pick writes both, so each switch ran every window's refresh (its panes, pages,
+# toolbar and sidebar, about 8 ms each, docs/speed.md). A window refreshes now when its own WindowRefreshKey
+# changes: its own picks and space, the sidebar width, tree edits, or another window starting or stopping
+# showing one of its tabs. The second window here switches between two tabs of its own ten times; the first,
+# on the same space showing a third tab, mustn't refresh once.
+budget rss=900 stalls50=20
+pace 0.3
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false, "newTabsAtTop": true}
+
+cra://open?url=${PAGE}?n=first
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+wait 1
+
+# ⌘N: the second window comes to the front on the same space. Its two tabs go to the top of Today, above the
+# first window's, so Next and Previous Tab go between them and never reach the tab the first window shows.
+cra://action/newWindow
+wait 2
+cra://open?url=${PAGE}?n=second-a
+expect-log GET \S*\?n=second-a
+wait 1
+cra://open?url=${PAGE}?n=second-b
+expect-log GET \S*\?n=second-b
+wait 2
+cra://debug?browserWindows=two
+expect-log browser windows two: count=2
+
+cra://debug?refreshCount=start
+pace 0.5
+cra://action/nextTab
+cra://action/previousTab
+cra://action/nextTab
+cra://action/previousTab
+cra://action/nextTab
+cra://action/previousTab
+cra://action/nextTab
+cra://action/previousTab
+cra://action/nextTab
+cra://action/previousTab
+wait 1
+cra://debug?cdp=Runtime.evaluate&params={"expression":"'quiet-front:'+location.search"}
+expect-log Cra cdp Runtime.evaluate .*"value":"quiet-front:\?n=second-b"
+cra://debug?refreshCount=end
+expect-log refresh count end: active=[1-9]\d* others=0$

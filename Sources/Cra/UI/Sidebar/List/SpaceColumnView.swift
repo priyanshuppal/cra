@@ -625,6 +625,7 @@ final class FavoritesGridView: NSView {
     private var extensionOrder: [String] = []
     private var favoritesID: UUID?
     private(set) var palette: SpacePalette?
+    private var syncGeneration = 0
     private var syncQueued = false
     /// Keep notes above the tiles and pinned extensions so they can drift over the row above.
     private let notesHost = MusicNotesHost()
@@ -672,15 +673,39 @@ final class FavoritesGridView: NSView {
         addSubview(card)
         addSubview(notesHost)
         registerForDraggedTypes([.craSidebarItem])
-        sync()
+        // The pins' icons and badges are the open tab's: while the grid shows them, synced again when this
+        // space's pick in this window changes. Its tiles' selection observes the tabs themselves (isSelected).
+        var synced = false
+        observeChanges(of: { [weak self] () -> UUID?? in
+            guard let self else { return nil }
+            let pins = !store.settings.showToolbar && !store.isIncognito(space: spaceID)
+            return .some(pins ? store.selectedTabID(in: spaceID, window: ui.windowID) : nil)
+        }) { [weak self] _ in
+            guard let self else { return }
+            if synced { self.queueSync() } else { self.sync() }
+            synced = true
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
 
+    private func queueSync() {
+        guard !syncQueued else { return }
+        syncQueued = true
+        Task { @MainActor [weak self] in
+            guard let self, self.syncQueued else { return }
+            self.sync()
+        }
+    }
+
     private func sync() {
         syncQueued = false
+        // A sync outside the tracking's own (a pick, queueSync) leaves the earlier tracking registered:
+        // only the latest one syncs, so they don't pile up.
+        syncGeneration &+= 1
+        let generation = syncGeneration
         var models: [(UUID, FavoriteTileModel)] = []
         var palette: SpacePalette?
         var dismissed = true
@@ -695,7 +720,8 @@ final class FavoritesGridView: NSView {
                 let ext = ExtensionStore.shared
                 let profile = store.profileDirectoryName(space: spaceID)
                 let entries = ext.entries(inProfile: profile)
-                let tab = store.selectedTabID(in: spaceID, window: ui.windowID)
+                // Untracked: the window list changes with every pick in any window. This space's pick is observed on its own (init).
+                let tab = store.untrackedSelectedTabID(in: spaceID, window: ui.windowID)
                 protectedMedia = tab.flatMap { ui.navState(for: $0).protectedMedia }
                 pins = ext.pinnedIDs(inProfile: profile).compactMap { id in
                     entries.first { $0.extensionID == id }.map {
@@ -745,8 +771,7 @@ final class FavoritesGridView: NSView {
             }
         } onChange: { [weak self] in
             Task { @MainActor in
-                guard let self, !self.syncQueued else { return }
-                self.syncQueued = true
+                guard let self, self.syncGeneration == generation else { return }
                 self.sync()
             }
         }

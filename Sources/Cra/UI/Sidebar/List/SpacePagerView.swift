@@ -66,14 +66,18 @@ final class SpacePagerView: NSView {
         ui.spaceSwipe != 0 || ui.libraryPage != nil ? nil : super.hitTest(point)
     }
 
+    /// The spaces paged and the one in front. Both are read through the window list, which every
+    /// pick in any window writes: only a change to them lays the strip out again.
+    private struct Paging: Equatable {
+        var ids: [UUID]
+        var focused: UUID
+    }
+
     private func observeSpaces() {
-        withObservationTracking {
-            _ = store.pagedSpaces(window: ui.windowID).map(\.id)
-            _ = store.focusedSpaceID(window: ui.windowID)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeSpaces() }
-        }
-        needsLayout = true
+        observeChanges(of: { [weak self] () -> Paging? in
+            guard let self else { return nil }
+            return Paging(ids: store.pagedSpaces(window: ui.windowID).map(\.id), focused: store.focusedSpaceID(window: ui.windowID))
+        }) { [weak self] _ in self?.needsLayout = true }
     }
 
     private func swipeChanged() {

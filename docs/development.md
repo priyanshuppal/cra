@@ -337,6 +337,8 @@ in a new Blank Window (`&at=x,y` picks the point, from the screen's top left).
 `cra://debug?blankMoveTo=<n>` picks the nth space in the Blank Window's "Move to…".
 `cra://debug?browserWindows=<label>` logs each browser window's kind (normal, blank, incognito),
 space, tabs, open tab and frame; cra.log gets the kinds and counts only.
+`cra://debug?refreshCount=<label>` logs how often each window's refresh ran since the last reading
+(`active=<n> others=<n,…>`) and starts the counts again; a pick in one window leaves the others at 0.
 
 `cra://debug?menuAt=315,24` opens the menu a click at that window point would open (the
 developer-mode ⌄ here), and `&button=right` the context menu, a tab row's for instance.
