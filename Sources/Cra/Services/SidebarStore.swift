@@ -2519,6 +2519,8 @@ final class SidebarStore {
         let selectedIn = prefs.windows.flatMap { w in shownIn.filter { w.selectedTabPerSpace[$0] == id }.map { (w.id, $0) } }
         let pinned = isPinned(id)
         let split = splitContaining(id)
+        // The closed pane's place, read before detach() takes it out of the split.
+        let paneIndex = split.flatMap { s in items[s.id]?.children.filter { items[$0]?.isTab == true }.firstIndex(of: id) }
         let folder = it.parentID.flatMap { items[$0]?.isFolder == true ? $0 : nil }
         let index = folder.flatMap { items[$0]?.children.firstIndex(of: id) }
         // The Today list a close successor is picked from: walked only for a tab some window has selected (#614).
@@ -2539,11 +2541,14 @@ final class SidebarStore {
         }
         if !selectedIn.isEmpty {
             for (w, sid) in selectedIn {
-                // Closing a pane keeps the split on screen: focus a neighbour pane. The split
-                // still goes back to the tab shown before it (Arc).
+                // Closing a pane keeps the split on screen: focus a neighbour pane, the one that
+                // slides into its place (SplitClose). The split still goes back to the tab shown
+                // before it (Arc).
                 let kept = previousTab[w]
-                let next = split.flatMap { s in items[s.id]?.children.first { items[$0]?.isTab == true } }
-                    ?? closeSuccessor(of: id, in: sid, window: w, list: list)
+                let next = split.flatMap { s -> UUID? in
+                    let panes = items[s.id]?.children.filter { items[$0]?.isTab == true } ?? []
+                    return SplitClose.successor(closingIndex: paneIndex ?? 0, remaining: panes.count).map { panes[$0] }
+                } ?? closeSuccessor(of: id, in: sid, window: w, list: list)
                 updateWindow(w) { $0.selectedTabPerSpace[sid] = next }
                 guard focusedSpaceID(window: w) == sid else { continue }
                 if split != nil { previousTab[w] = kept }
