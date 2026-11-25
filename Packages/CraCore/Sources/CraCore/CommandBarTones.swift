@@ -21,6 +21,14 @@ public struct CommandBarTones: Equatable, Sendable {
         dark ? ArcThemeData.Color(RGB(26 / 255, 26 / 255, 26 / 255), 0.85) : ArcThemeData.Color(.white, 0.94)
     }
 
+    /// The row under the pointer when it isn't the selected one: Arc's `CommandBarRowHoverBackgroundColor`
+    /// (ARC_CommandBar.bundle's Assets.car, Arc 1.174.3), black at 0.05 on a light bar and white at 0.05 on a
+    /// dark one. Arc's `CommandBarSuggestionRowView` keeps `isHovered` and paints its theme's `hoveredColor`
+    /// apart from the selection's `selectedColor`, so hover isn't the selection.
+    public static func hover(dark: Bool) -> ArcThemeData.Color {
+        ArcThemeData.Color(dark ? .white : .black, 0.05)
+    }
+
     public init(selection: ArcThemeData.Color, badge: RGB) { (self.selection, self.badge) = (selection, badge) }
 
     public init(shadedDark: RGB, shaded: RGB, midTone: RGB, tintedLight: RGB, dark: Bool) {
@@ -33,5 +41,16 @@ public struct CommandBarTones: Equatable, Sendable {
 
     public init(theme: SpaceTheme, dark: Bool) {
         self.init(shadedDark: theme.shadedDark, shaded: theme.shaded, midTone: theme.midTone, tintedLight: theme.tintedLight, dark: dark)
+    }
+}
+
+/// What a command bar row is filled with. The selected row (the keyboard's, the one Return opens) keeps the
+/// space's colour while the pointer is on another row, which gets Arc's faint hover fill; a row that is both
+/// is the selected one.
+public enum CommandBarRowFill: Equatable, Sendable {
+    case selection, hover, none
+
+    public init(row: Int, selected: Int, hovered: Int?) {
+        self = row == selected ? .selection : row == hovered ? .hover : .none
     }
 }

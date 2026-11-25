@@ -2351,6 +2351,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
                 return
             }
+            // commandBarRowPoint=<text>: "command bar row point: <x> <y>", the centre of the open bar's row whose address
+            // holds <text> in top-left screen points, where scenario.sh's `click bar-row <text> [move]` puts the real
+            // pointer; "none" without one. Nothing is selected first: the pointer's hover is what's tested.
+            if let text = dict["commandBarRowPoint"] {
+                let bar = main.commandBar
+                guard let i = bar.result.items.firstIndex(where: { $0.url?.contains(text) == true }),
+                      let p = main.debugCommandBarRowPoint(i), let top = NSScreen.screens.first?.frame.maxY else {
+                    CraLog.note("command bar row point: none"); return
+                }
+                CraLog.note("command bar row point: \(Int(p.x)) \(Int(top - p.y))")
+                return
+            }
+            // commandBarHover=<label>: "Cra command bar hover <label>: selected=<n> hovered=<address>", the open bar's
+            // selected row and the address of the row under the pointer ("-" for none). Arc's hover is its own fill and
+            // leaves the selection alone.
+            if let label = dict["commandBarHover"] {
+                let bar = main.commandBar
+                let hovered = bar.hoveredIndex.flatMap { bar.result.items.indices.contains($0) ? bar.result.items[$0] : nil }
+                NSLog("Cra command bar hover %@: selected=%d hovered=%@", label, bar.selectedIndex, hovered.map { $0.url ?? $0.title } ?? "-")
+                return
+            }
+            // commandBarArrow=down|up: ↓ or ↑ pressed in the open bar, through the app as a key press goes.
+            if let arrow = dict["commandBarArrow"] {
+                let down = arrow == "down"
+                main.debugCommandBarKey(characters: String(utf16CodeUnits: [unichar(down ? NSDownArrowFunctionKey : NSUpArrowFunctionKey)], count: 1), keyCode: down ? 125 : 126,
+                                        modifiers: [.function, .numericPad])
+                return
+            }
             // commandBarReturn=<label>: Return in the browser window's open bar, on the selected row (#667).
             if let label = dict["commandBarReturn"] {
                 CraLog.note("command bar return \(label): \(main.commandBar.isOpen ? "pressed" : "no bar")")
