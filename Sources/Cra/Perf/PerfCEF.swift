@@ -34,7 +34,7 @@ enum PerfCEF {
             if samples % 12 == 1 { readProcessSites(app, recorder) }
             recorder.tabs(tabCounts(app))
             recorder.userIdle(CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput) >= 60)
-            if let browser = app.main?.currentBrowser, browser.isCreated, !browser.isClosed { readPage(browser, recorder) }
+            if pageSeen { readCurrentPage(app, recorder) }
             recorder.addMainThreadCost(ns: MainLoopObserver.threadCPU() &- start)
         }
         observeApp(app)
@@ -181,11 +181,18 @@ enum PerfCEF {
         }
     }
 
+    /// Whether the 5 s sample reads the current page (PerfSessionRules.readsPage), from observeApp.
+    private static var pageSeen = false
+
+    private static func readCurrentPage(_ app: AppDelegate, _ recorder: PerfRecorder) {
+        if let browser = app.main?.currentBrowser, browser.isCreated, !browser.isClosed { readPage(browser, recorder) }
+    }
+
     /// kCGAnyInputEventType.
     private static let anyInput = CGEventType(rawValue: ~0)!
 
     /// Breadcrumbs for what most often comes right before a stall that no Cra action explains
-    /// (GitHub #135), and the state every stall is tagged with.
+    /// (GitHub #135), the state every stall is tagged with, and whether the sample reads the page.
     private static func observeApp(_ app: AppDelegate) {
         var last: (active: Bool, onScreen: Bool)?
         let update = { [weak app] in
@@ -194,6 +201,10 @@ enum PerfCEF {
             guard last.map({ $0 != now }) ?? true else { return }
             last = now
             Perf.app(active: now.0, onScreen: now.1)
+            let seen = PerfSessionRules.readsPage(active: now.0, onScreen: now.1)
+            // Coming back: one read of what the page counted while nobody looked.
+            if seen, !pageSeen, let recorder = PerfRecorder.shared { readCurrentPage(app, recorder) }
+            pageSeen = seen
         }
         let center = NotificationCenter.default
         let marks: [(Notification.Name, String?)] = [

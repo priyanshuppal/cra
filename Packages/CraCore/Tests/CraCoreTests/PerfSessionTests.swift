@@ -18,6 +18,11 @@ struct PerfSessionTests {
         #expect(!PerfSessionRules.writesFiles(owner: true, recording: false))
     }
 
+    @Test(arguments: [(true, true, true), (true, false, false), (false, true, false), (false, false, false)])
+    func readsPageOnlyWhenSeen(active: Bool, onScreen: Bool, reads: Bool) {
+        #expect(PerfSessionRules.readsPage(active: active, onScreen: onScreen) == reads)
+    }
+
     @Test(.bug("https://github.com/VictorKildahl/cra/issues/91")) func aMarkerLeftBehindIsAnAbnormalEnd() {
         let marker = PerfSessionMarker(id: "abc", launch: 3, startedAt: start, pid: 42, craVersion: "0.1.26")
         var history = PerfHistory()

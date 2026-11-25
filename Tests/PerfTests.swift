@@ -22,6 +22,7 @@ enum PerfTests {
         workAcrossATimerBoundaryIsOnePass()
         theFirstSlowPassGetsAStack()
         theObserversCostIsCPUNotWaiting()
+        watchdogParksWhileLoopSleeps()
         print("Perf recorder: \(checks) checks passed")
     }
 
@@ -334,7 +335,7 @@ enum PerfTests {
     /// report included. Here each stall report waits 2 ms off the CPU.
     @MainActor static func theObserversCostIsCPUNotWaiting() {
         let observer = MainLoopObserver(stallMs: 0, slowMs: 60_000, hangMs: 60_000,
-                                        onStall: { _, _, _ in usleep(2_000) }, onSlow: { _, _, _ in }, onHang: { _, _, _ in }, onWatch: {})
+                                        onStall: { _, _, _ in usleep(2_000) }, onSlow: { _, _, _ in }, onHang: { _, _, _ in }, onWatch: { false })
         observer.start()
         // One extra turn, so callbacks that end a pass (and report the stall) fall on the old
         // one-in-256 timing too.
@@ -352,6 +353,36 @@ enum PerfTests {
         let perCallback = Double(d.observerNs) / Double(max(d.callbacks, 1))
         expect(d.callbacks >= 512, "the loop turned often enough to time some callbacks (\(d.callbacks))")
         expect(perCallback < 100_000, "a callback costs its CPU, not the 2 ms it waited (\(Int(perCallback)) ns each)")
+    }
+
+    /// An idle Cra isn't woken twice a second for the watchdog: with the run loop asleep at two
+    /// looks in a row it parks until the loop wakes. A stall that starts while it is parked (work
+    /// sent to the main queue from another thread, as a page or timer does) is still reported as
+    /// a hang while it lasts, within half a second of `hangMs` as before.
+    @MainActor static func watchdogParksWhileLoopSleeps() {
+        let hangs = NSLock()
+        var hangMs: [Double] = []
+        let observer = MainLoopObserver(stallMs: 60_000, slowMs: 60_000, hangMs: 900,
+                                        onStall: { _, _, _ in }, onSlow: { _, _, _ in },
+                                        onHang: { ms, _, _ in hangs.withLock { hangMs.append(ms) } }, onWatch: { false })
+        // Something for the loop to wait on, so spinning sleeps instead of returning at once.
+        let keepAlive = Timer(timeInterval: 3600, repeats: false) { _ in }
+        RunLoop.main.add(keepAlive, forMode: .common)
+        defer { keepAlive.invalidate() }
+        observer.start()
+        // 2.2 s of a sleeping loop, then work sent to the main queue blocks it for at least 1.6 s.
+        var idle: MainLoopObserver.Drained?
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            idle = observer.drain()
+            busyMainThreadForPerfTest(atLeast: 1.6, limit: 3) { hangs.withLock { !hangMs.isEmpty } }
+        }
+        spin(4.5)
+        observer.stop()
+        let seen = hangs.withLock { hangMs }
+        expect(idle.map { $0.watchdogParks >= 1 } == true, "the watchdog parked while the run loop slept (\(idle?.watchdogParks ?? -1) parks)")
+        expect(idle.map { $0.watchdogNs < 50_000_000 } == true, "and cost next to nothing while parked (\(idle?.watchdogNs ?? 0) ns)")
+        expect(seen.count == 1, "a stall that started while the watchdog was parked is a hang (\(seen))")
+        expect(seen.first.map { $0 >= 900 && $0 < 1_600 } == true, "seen within half a second of hangMs, while it lasted (\(seen))")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
