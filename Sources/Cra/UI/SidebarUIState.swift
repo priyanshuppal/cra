@@ -296,6 +296,8 @@ final class SidebarActions {
     /// The sidebar URL field edited in place (#344): Return with what was typed, in the selected
     /// tab or, for another host from a pinned tab, a new one (SidebarAddressEdit.commit).
     var commitAddress: (String) -> Void = { _ in }
+    /// Escape in the sidebar's address edited in place or the developer bar's: the page takes the keys back.
+    var addressEditCancelled: () -> Void = {}
     /// A typed URL or search in a new tab (⌘ + New Tab pastes the clipboard's text).
     var openTyped: (String) -> Void = { _ in }
 }
