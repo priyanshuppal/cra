@@ -33,7 +33,8 @@ cra://debug?peekShown=resized
 expect-log Cra peek shown resized: veiled=1 .* cardShadow=0\.35/14 onCard=1 windowShadow=0$
 
 # Closed: no Peek, no card shadow.
-cra://action/closeTab
+# Esc to the Peek, as peek-escape-closes closes it (a background copy's closeTab goes to the tab).
+cra://debug?key=%1B,53,0&page=1&target=little
 wait 1
 cra://debug?peekShown=closed
 expect-log Cra peek shown closed: veiled=0 .* cardShadow=- windowShadow=-$
