@@ -94,6 +94,7 @@ enum Perf {
 
     /// A start-up phase reached, in milliseconds since `launch()`; only the first counts.
     static func phase(_ name: String) { send(.phase(name, ms: ms(since: launchedAt))) }
+    static func phase(_ phase: PerfPhase) { self.phase(phase.rawValue) }
 
     /// The site of the page put on screen last, for the stalls that happen while it is (nil: none,
     /// or incognito).

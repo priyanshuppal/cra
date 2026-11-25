@@ -188,8 +188,17 @@ enum PerfCEF {
     /// (GitHub #135), and the state every stall is tagged with.
     private static func observeApp(_ app: AppDelegate) {
         var last: (active: Bool, onScreen: Bool)?
+        var firstFrameSeen = false
         let update = { [weak app] in
             guard let app else { return }
+            // Start-up's windowOnScreen: the window server says the front browser window shows, so its
+            // first frame is on screen (windowsShown is only when bootstrap ordered it in). A launch into
+            // onboarding records none: its browser window comes up when the user finishes.
+            if app.isOnboarding { firstFrameSeen = true }
+            if !firstFrameSeen, let front = app.main?.window, front.occlusionState.contains(.visible) {
+                firstFrameSeen = true
+                Perf.phase(.windowOnScreen)
+            }
             let now = (NSApp.isActive, app.mainWindows.contains { $0.window?.occlusionState.contains(.visible) == true })
             guard last.map({ $0 != now }) ?? true else { return }
             last = now

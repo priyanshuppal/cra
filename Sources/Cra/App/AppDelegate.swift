@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func bootstrapIfNeeded() {
         guard !bootstrapped else { return }
         bootstrapped = true
+        Perf.phase(.bootstrapStarted)
         NSApp.setActivationPolicy(.regular)
         // Before any window docks: window managers see one Cra window, not its page and panels (#391).
         DockedWindowAccessibility.install()
@@ -239,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let urls = pendingURLs
         pendingURLs = []
         for u in urls { openExternalURL(u) }
-        Perf.phase("windowsShown")
+        Perf.phase(.windowsShown)
     }
 
     /// A fresh install runs Dia's onboarding (cover, default browser, privacy,
