@@ -391,13 +391,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         let pressure = PerfSystemSample.pressure(level: PerfSystemSampler.pressureLevel())
         if let lastPressure, lastPressure != pressure { CraLog.note("memory pressure \(lastPressure.rawValue) → \(pressure.rawValue)") }
+        let previous = lastPressure
         lastPressure = pressure
-        sweepForMemoryPressure(pressure)
+        sweepForMemoryPressure(pressure, from: previous)
     }
 
     /// "Force tabs out of memory when the Mac is short of memory" (GitHub #153): while macOS
     /// reports memory pressure, the pages hidden longest close, a few per sweep, until it doesn't.
-    private func sweepForMemoryPressure(_ pressure: PerfSystemSample.Pressure) {
+    private func sweepForMemoryPressure(_ pressure: PerfSystemSample.Pressure, from previous: PerfSystemSample.Pressure?) {
+        // Favicons no row shows (every host the command bar's history ever showed) go back to disk, once as
+        // memory runs short, whatever the setting: they read their file again when next shown.
+        if CacheTrim.trims(from: previous, to: pressure) { favicons.trimForMemoryPressure(keeping: shownFaviconKeys()) }
         let now = composition.clock.now
         guard TabSleepPolicy.sweepsForPressure(pressure, enabled: store.settings.tabSleepOnMemoryPressure,
                                                lastSweep: lastPressureSweep, now: now) else { return }
@@ -405,6 +409,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let policy = TabSleepPolicy.memoryPressure(pressure)
         CraLog.note("tab sleep: memory pressure \(pressure.rawValue), closing up to \(policy.limit ?? 0) pages per window")
         for w in mainWindows { w.browsers.sleepIdleTabs(policy) }
+    }
+
+    /// The icon keys a row shows: every sidebar item's (favorites and pinned tabs' home icons included) and
+    /// each Little Window's page.
+    private func shownFaviconKeys() -> Set<String> {
+        var keys = Set<String>()
+        for tab in store.items.values.compactMap(\.tab) {
+            for key in [tab.faviconKey, tab.customIconKey, FaviconKey.key(for: tab.savedURL)] { if let key { keys.insert(key) } }
+        }
+        for little in littleWindows { if let key = FaviconKey.key(for: little.currentURL) { keys.insert(key) } }
+        return keys
     }
 
     /// Settings > Privacy > "Always use secure connections" and "Fingerprinting protection", live
@@ -2795,7 +2810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // filling memory or waiting out the last sweep. The setting still decides.
             if let level = dict["memoryPressure"].flatMap(PerfSystemSample.Pressure.init(rawValue:)) {
                 lastPressureSweep = nil
-                sweepForMemoryPressure(level)
+                sweepForMemoryPressure(level, from: nil)
                 return
             }
             // Opens what normally needs a pointer or a held key, for screenshots.

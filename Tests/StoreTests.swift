@@ -96,6 +96,7 @@ enum StoreTests {
         storingSameIconAgainNotifiesNoOne()
         newIconNotifiesOnlyItsKey()
         prefetchDecodesIconsAndTheirTone()
+        trimmedIconsReadTheirFileAgain()
         folderSymbols()
         moveTabToSpace()
         moveFolderToSpace()
@@ -2723,6 +2724,25 @@ enum StoreTests {
         var again = false
         cache.prefetch([dark]) { again = true }
         expect(again, "an icon already in memory isn't read again")
+    }
+
+    /// Short of memory, the icons no row shows go (the command bar's history keeps every host it showed),
+    /// and come back from their files when shown again.
+    @MainActor
+    private static func trimmedIconsReadTheirFileAgain() {
+        let kept = FaviconKey.key(site: "kept-icon.example", tabID: UUID())
+        let dropped = "history-only.example"
+        writeGlyph(.black, forKey: kept)
+        writeGlyph(.black, forKey: dropped)
+        let cache = FaviconCache()
+        let keptImage = cache.image(forKey: kept), droppedImage = cache.image(forKey: dropped)
+        expect(keptImage != nil && droppedImage != nil && cache.glyphIsDark(forKey: dropped) == true, "both icons read from disk")
+        cache.trimForMemoryPressure(keeping: [kept])
+        expect(cache.image(forKey: kept) === keptImage, "an icon a row shows stays in memory")
+        expect(!cache.knowsGlyphTone(forKey: dropped), "a dropped icon's tone goes with it")
+        let again = cache.image(forKey: dropped)
+        expect(again != nil && again !== droppedImage, "a dropped icon reads its file again when next shown")
+        expect(cache.glyphIsDark(forKey: dropped) == true, "and its tone is worked out again")
     }
 
     // promise: #54

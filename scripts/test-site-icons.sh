@@ -6,7 +6,7 @@ TEST_DIR="$(mktemp -d /tmp/cra-site-icon-tests.XXXXXX)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 C=Packages/CraCore/Sources/CraCore
 xcrun swiftc -swift-version 5 -parse-as-library ${CRA_TEST_SWIFTC_FLAGS:-} \
-  "$C/SiteIconQueue.swift" "$C/SiteIcon.swift" "$C/FaviconKey.swift" "$C/FavoriteSelectionTint.swift" "$C/GlyphTone.swift" "$C/TabCustomIcon.swift" \
+  "$C/SiteIconQueue.swift" "$C/SiteIcon.swift" "$C/FaviconKey.swift" "$C/FavoriteSelectionTint.swift" "$C/GlyphTone.swift" "$C/CacheTrim.swift" "$C/TabCustomIcon.swift" \
   Sources/Cra/Services/SiteIconLoader.swift Sources/Cra/Services/FaviconCache.swift \
   Sources/Cra/Services/Persistence.swift Sources/Cra/Services/CraLog.swift Sources/Cra/Perf/Perf.swift "$C"/Perf/*.swift \
   Tests/SiteIconLoaderTests.swift -o "$TEST_DIR/site-icon-tests"

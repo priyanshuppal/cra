@@ -237,6 +237,22 @@ final class FaviconCache {
         for key in signals.keys { notify(key) }
     }
 
+    /// As the Mac runs short of memory: keeps the icons of `keeping` (and the site icons they fall back
+    /// to, CacheTrim) and lets the rest go. Each dropped key reads its file again when it is next shown.
+    /// What a view shows keeps its image; no one is told.
+    func trimForMemoryPressure(keeping: Set<String>) {
+        let keep = CacheTrim.survivors(cached: images.keys, keeping: keeping)
+        for key in images.keys where !keep.contains(key) {
+            images[key] = nil
+            attemptedDiskLoad.remove(key)
+            pixels[key] = nil
+            onDisk.remove(key)
+            dominant[key] = nil
+            selectionPalettes[key] = nil
+            glyphTone[key] = nil
+        }
+    }
+
     static func isCustom(_ key: String) -> Bool { key.hasPrefix("custom-") }
 
     /// Fits an image the user picked into a 256px square and caches it under a
