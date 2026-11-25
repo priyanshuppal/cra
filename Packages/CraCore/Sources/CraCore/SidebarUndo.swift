@@ -63,6 +63,11 @@ public struct SidebarUndo {
         if newestTidy != nil { entries.removeLast() }
     }
 
+    /// ⇧⌘T reopened a close on its own: the newest close step goes, so ⌘Z doesn't reopen a second tab for it.
+    public mutating func dropNewestReopen() {
+        if let i = entries.lastIndex(where: { $0.kind == .reopen }) { entries.remove(at: i) }
+    }
+
     // MARK: Labels
 
     /// Arc 1.174.3's titles (Edit ▸ "Undo <label>"), read from its binary, where they sit inline beside their

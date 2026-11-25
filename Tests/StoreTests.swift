@@ -138,6 +138,9 @@ enum StoreTests {
         clearTodayArchivesInOnePass()
         plainPickMovesNoRevision()
         sidebarUndo()
+        sidebarUndoLeavesNoEmptySplit()
+        sidebarUndoSurvivesASpaceDeleted()
+        sidebarUndoAfterReopen()
         settingsSync()
         syncLeavesBlankWindowsOnTheirMac()
         blankWindows()
@@ -4301,6 +4304,114 @@ enum StoreTests {
         // A close is ⇧⌘T's to bring back, after any edit before it.
         store.archiveTab(tabs[4], reason: .manual)
         expect(store.undoLabel == "Close Tab" && store.undo() == .reopen, "⌘Z after a close reopens it, as ⇧⌘T")
+    }
+
+    /// ⌘Z after dropping a tab on another tab's row (combineIntoSplit) takes the split away with the move, and a
+    /// split made since a step that a tab goes back out of doesn't stay behind empty or with one pane: the sidebar
+    /// had an empty split saved, which SidebarIntegrity doesn't repair.
+    @MainActor
+    private static func sidebarUndoLeavesNoEmptySplit() {
+        let store = SidebarStore(clock: ManualScheduler())
+        let sid = store.createSpace(title: "Undo split", emoji: "🪟").id
+        guard let space = store.space(sid) else { return expect(false, "the space is made") }
+        let today = space.todayContainerID, pinned = space.pinnedContainerID
+        func noThinSplits() -> Bool { store.items.values.allSatisfy { !$0.isSplit || $0.children.count >= 2 } }
+        _ = store.createTab(url: "https://example.com/undo-split/first", in: sid, pinned: true, select: false)
+        let target = store.createTab(url: "https://example.com/undo-split/target", in: sid, pinned: true, select: false)
+        let older = store.createTab(url: "https://example.com/undo-split/older", in: sid, select: false)
+        let dragged = store.createTab(url: "https://example.com/undo-split/dragged", in: sid, select: false)
+        let pinnedBefore = store.item(pinned)!.children, todayBefore = store.item(today)!.children
+
+        // Across sections: a Today tab dropped on a pinned tab's row.
+        guard let split = store.combineIntoSplit(dragged.id, onto: target.id, leading: true) else {
+            return expect(false, "the drop makes a split")
+        }
+        expect(store.item(split.id)?.children.count == 2 && store.undoLabel == "Move Item", "the drop is one step: Undo Move Item")
+        expect(store.undo() == .undone("Move Item"), "⌘Z undoes the drop")
+        expect(store.item(split.id) == nil && noThinSplits(), "the split goes with it: no split of one pane or none is left")
+        expect(store.item(pinned)?.children == pinnedBefore && store.item(dragged.id)?.parentID == today
+               && store.item(today)?.children == todayBefore, "both tabs are back where they were")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing a drop that made a split")
+
+        // In one section: the drop was no step at all before.
+        guard let same = store.combineIntoSplit(older.id, onto: dragged.id, leading: false) else {
+            return expect(false, "a drop in Today makes a split")
+        }
+        expect(store.undo() == .undone("Move Item") && store.item(same.id) == nil && noThinSplits()
+               && store.item(today)?.children == todayBefore, "⌘Z undoes a drop in Today too, split and all")
+
+        // A split made after a step, out of tabs the step put back.
+        guard let last = todayBefore.last, todayBefore.count == 2 else { return expect(false, "two Today tabs") }
+        store.moveItem(last, to: today, index: 0)
+        expect(store.undoLabel == "Move Item" && store.item(today)?.children == Array(todayBefore.reversed()), "the reorder is a step")
+        guard let later = store.createSplit(with: [older.id, dragged.id]) else { return expect(false, "a split is made after it") }
+        expect(store.undo() == .undone("Move Item"), "⌘Z undoes the reorder")
+        expect(store.item(later.id) == nil && noThinSplits() && store.item(today)?.children == todayBefore,
+               "the split both tabs went back out of goes too")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing under a split made since")
+    }
+
+    /// Deleting a space archives its tabs without a ⌘Z step per tab, and removing a shared favorite adds none,
+    /// so the steps before them stay: ⌘Z after Clear, then deleting another space, still undoes the Clear.
+    @MainActor
+    private static func sidebarUndoSurvivesASpaceDeleted() {
+        let store = AppComposition(clock: ManualScheduler()).store
+        let sid = store.createSpace(title: "Undo kept", emoji: "🧹").id
+        guard let space = store.space(sid) else { return expect(false, "the space is made") }
+        let wasShared = store.settings.sharedFavorites
+        store.setFavoritesShared(true)
+        let favorite = store.createTab(url: "https://example.com/undo-kept/favorite", in: sid, select: false)
+        store.addToFavorites(favorite.id, in: sid)
+        let cleared = (0..<3).map { store.createTab(url: "https://example.com/undo-kept/\($0)", in: sid, select: false).id }
+        let order = store.item(space.todayContainerID)!.children
+        store.clearToday(sid, playing: [])
+        expect(cleared.allSatisfy { store.item($0) == nil } && store.undoLabel == "Clear Tabs", "Clear is the newest step")
+
+        let other = store.createSpace(title: "Undo gone", emoji: "🗑️", focus: false).id
+        for i in 0..<5 { _ = store.createTab(url: "https://example.com/undo-gone/\(i)", in: other, select: false) }
+        store.deleteSpace(other)
+        expect(store.space(other) == nil && store.undoLabel == "Clear Tabs", "deleting a space adds no step per tab")
+        store.removeFromFavorites(favorite.id)
+        expect(store.item(favorite.id) == nil && store.undoLabel == "Clear Tabs", "removing a shared favorite adds no step")
+
+        expect(store.undo() == .undone("Clear Tabs"), "⌘Z still undoes the Clear")
+        expect(store.item(space.todayContainerID)?.children == order, "the cleared tabs are back, in order")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing the Clear")
+        store.setFavoritesShared(wasShared)
+    }
+
+    /// ⇧⌘T takes the close it reopened off ⌘Z's stack, so a later ⌘Z undoes the edit before it instead of
+    /// reopening an older, unrelated tab; a reopen through ⌘Z takes one close off, not two.
+    @MainActor
+    private static func sidebarUndoAfterReopen() {
+        let clock = ManualScheduler()
+        let store = AppComposition(clock: clock).store
+        store.clearArchive()
+        let sid = store.createSpace(title: "Undo reopen", emoji: "🔁").id
+        guard let space = store.space(sid) else { return expect(false, "the space is made") }
+        let old = store.createTab(url: "https://example.com/undo-reopen/old", in: sid, select: false)
+        store.archiveTab(old.id, reason: .auto)  // in the archive, with no step of its own
+        clock.advance(by: 60)
+        let folder = store.createFolder(named: "Undo reopen", in: space.pinnedContainerID)
+        let closed = store.createTab(url: "https://example.com/undo-reopen/closed", in: sid, select: false)
+        store.archiveTab(closed.id, reason: .manual)
+        expect(store.undoLabel == "Close Tab", "the close is the newest step")
+        expect(store.reopenLastClosed() == .archived(closed.id), "⇧⌘T reopens it")
+        expect(store.undoLabel == "New Folder…", "and takes its step off: Undo New Folder…")
+        expect(store.undo() == .undone("New Folder…") && store.item(folder.id) == nil && store.archive.contains { $0.id == old.id },
+               "⌘Z undoes the folder, and the older tab stays in the archive")
+
+        // ⌘Z on a close (AppDelegate: store.undo(), then the reopen with fromUndo) leaves the close before it.
+        clock.advance(by: 60)
+        let a = store.createTab(url: "https://example.com/undo-reopen/a", in: sid, select: false)
+        let b = store.createTab(url: "https://example.com/undo-reopen/b", in: sid, select: false)
+        store.archiveTab(a.id, reason: .manual)
+        clock.advance(by: 60)
+        store.archiveTab(b.id, reason: .manual)
+        expect(store.undo() == .reopen && store.reopenLastClosed(fromUndo: true) == .archived(b.id), "⌘Z reopens the tab closed last")
+        expect(store.undoLabel == "Close Tab" && store.undo() == .reopen && store.reopenLastClosed(fromUndo: true) == .archived(a.id),
+               "⌘Z again reopens the one closed before it")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after the reopens")
     }
 
     /// Two Macs on one sync folder: the second takes the first's sidebar, a change on either reaches

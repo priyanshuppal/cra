@@ -4168,10 +4168,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// a Tidy, or a close, which brings back the tab closed last (GitHub #21). Not while the keyboard is in
     /// something with text to undo: a text field, or an editable element in a page (Chromium's page view
     /// reports its ui::TextInputType, 0 = none). On an Easel, ⌘Z undoes canvas edits instead.
+    /// Only in a browser window that isn't incognito: the steps are the saved sidebar's, so ⌘Z in an incognito
+    /// window or a Little Window would undo an edit in another window's space out of sight (an incognito window
+    /// reopened nothing before either). There the key goes on, to Edit ▸ Undo's text routing.
     private func undoClosedTab(_ event: NSEvent) -> Bool {
-        guard Shortcut("z", .command).matches(event), !textFieldHasKey(event), !easelHasKey(event) else { return false }
+        guard Shortcut("z", .command).matches(event), !textFieldHasKey(event), !easelHasKey(event),
+              browserWindowForUndo(event.window ?? NSApp.keyWindow) != nil else { return false }
         undoSidebar()
         return true
+    }
+
+    /// The browser window `window` is, or holds as a page's child window, when it isn't incognito.
+    private func browserWindowForUndo(_ window: NSWindow?) -> MainWindowController? {
+        var w = window
+        while let x = w {
+            if let m = x.windowController as? MainWindowController { return m.isIncognito ? nil : m }
+            w = x.parent
+        }
+        return nil
     }
 
     /// The sidebar's newest step goes back; a close, or nothing left to undo, reopens as ⇧⌘T does.
@@ -4179,7 +4193,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let outcome = store.undo()
         CraLog.note("undo: \(outcome)")
         if case .undone = outcome { return }
-        perform("reopenClosedTab")
+        reopenClosedTab(fromUndo: true)
+    }
+
+    /// ⇧⌘T, or ⌘Z on a close: Arc brings back the tab closed last, whether pinned, archived or a closed Peek.
+    private func reopenClosedTab(fromUndo: Bool) {
+        guard !main.isIncognito else { return }  // incognito tabs leave nothing to restore
+        let peek = main.closedPeek.map { ReopenClosedTab.ClosedPeek(url: $0.url, tabID: $0.tabID, closedAt: $0.at) }
+        let outcome = store.reopenLastClosed(in: main.windowID, peek: peek, fromUndo: fromUndo)
+        if case .peek(let url, let tabID)? = outcome {
+            main.closedPeek = nil
+            if let tabID, store.item(tabID) != nil { store.selectTab(tabID, window: main.windowID) }
+            openPeek(url: url, over: main, fromTab: tabID)
+        }
     }
 
     private static let textUndo = Selector(("undo:"))
@@ -4192,7 +4218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     /// The key window is a browser window and nothing in it with an undo of its own has the keyboard.
     private var sidebarHasUndo: Bool {
-        guard let window = NSApp.keyWindow, window.windowController is MainWindowController else { return false }
+        guard let window = NSApp.keyWindow, browserWindowForUndo(window)?.window === window else { return false }
         return !textFieldHasKey(in: window) && !easelHasKey(in: window)
     }
 
@@ -4313,15 +4339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
         case "closeWindow": main.window?.performClose(nil)
         case "reopenClosedTab":
-            guard !main.isIncognito else { break }  // incognito tabs leave nothing to restore
-            // Arc: ⇧⌘T brings back the tab closed last, whether pinned, archived or a closed Peek.
-            let peek = main.closedPeek.map { ReopenClosedTab.ClosedPeek(url: $0.url, tabID: $0.tabID, closedAt: $0.at) }
-            let outcome = store.reopenLastClosed(in: main.windowID, peek: peek)
-            if case .peek(let url, let tabID)? = outcome {
-                main.closedPeek = nil
-                if let tabID, store.item(tabID) != nil { store.selectTab(tabID, window: main.windowID) }
-                openPeek(url: url, over: main, fromTab: tabID)
-            }
+            reopenClosedTab(fromUndo: false)
         case "copyURL":
             // Arc: "Copy the current tab's URL without trackers"; with tabs picked in the sidebar,
             // every picked tab's, one per line ("Copied item links", #322).

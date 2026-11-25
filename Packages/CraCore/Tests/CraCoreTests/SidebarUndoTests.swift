@@ -125,6 +125,21 @@ struct SidebarUndoTests {
         #expect(undo.entries.isEmpty)
     }
 
+    /// ⇧⌘T reopened a close on its own: the newest close goes, whatever came after it, and nothing else does.
+    @Test func reopenTakesTheNewestCloseOff() {
+        var undo = SidebarUndo()
+        undo.record(.init(SidebarUndo.closePeek, .reopen))
+        undo.record(.init(SidebarUndo.newFolder, .tree(.init(containers: []), created: [])))
+        undo.record(.init(SidebarUndo.closeTab, .reopen))
+        undo.record(.init(SidebarUndo.moveSpace, .spaceOrder([])))
+        undo.dropNewestReopen()
+        #expect(undo.entries.map(\.label) == [SidebarUndo.closePeek, SidebarUndo.newFolder, SidebarUndo.moveSpace])
+        undo.dropNewestReopen()
+        #expect(undo.entries.map(\.label) == [SidebarUndo.newFolder, SidebarUndo.moveSpace])
+        undo.dropNewestReopen()
+        #expect(undo.entries.count == 2)
+    }
+
     @Test func aMovedTabGoesBackToItsParentAndIndex() {
         var tree = Tree()
         let a = tree.tab("a", in: tree.today), b = tree.tab("b", in: tree.today), c = tree.tab("c", in: tree.today)
