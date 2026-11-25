@@ -51,6 +51,12 @@ enum AppPaths {
 /// took ~30 ms there, two to four dropped frames after every tab switch.
 private let persistenceQueue = DispatchQueue(label: "dk.kildahl.cra.persistence", qos: .utility)
 
+/// A small file written whole and as is (no `.bak`, unlike JSONStore), on the queue JSONStore
+/// writes on, so the main thread doesn't wait for the disk.
+func writeInBackground(_ data: Data, to url: URL) {
+    persistenceQueue.async { try? data.write(to: url, options: .atomic) }
+}
+
 /// One JSON file, loaded once, saved with a short debounce. Writes are atomic
 /// and the previous version is kept as `<name>.bak`, which is what Arc does
 /// with its timestamped Storable*.json copies, minus the pile-up.
