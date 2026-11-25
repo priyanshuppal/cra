@@ -12,6 +12,7 @@ enum SiteIconLoaderTests {
     static let tests: [(String, @MainActor () async -> Void)] = [
         ("fetch", anUnopenedTabGetsItsSitesIconAndTheEnginesReplacesIt),
         ("race", anIconThatArrivesDuringTheFetchStays),
+        ("loading", aRowWhoseIconIsLoadingHearsWhenItLands),
         ("svg", anSVGIconIsDrawnSmall),
         ("large", anIconTooLargeToDownloadIsSkipped),
         ("failed", aSiteThatFailsIsNotAskedAgain),
@@ -93,6 +94,21 @@ enum SiteIconLoaderTests {
         }
         expect(site.paths.contains("/favicon.ico"), "the fetch ran")
         expect(cache.image(forKey: "127.0.0.1") === engine, "a fetch never replaces an icon stored meanwhile")
+    }
+
+    /// A row whose icon a space's list is reading from disk (FaviconCache.prefetch) fetches nothing, and a
+    /// list that observes nothing (Library ▸ Boosts, the command bar) hears when the icon lands.
+    @MainActor private static func aRowWhoseIconIsLoadingHearsWhenItLands() async {
+        let site = await LocalSite(pages: ["/favicon.ico": .png(png(blue, side: 16))])
+        let cache = FaviconCache(), loader = SiteIconLoader()
+        let url = "http://127.0.0.1:\(site.port)/"
+        let key = FaviconKey.key(for: url)!
+        try? png(orange, side: 16)?.write(to: AppPaths.favicons.appendingPathComponent(FaviconCache.fileName(key)))
+        cache.prefetch([key])
+        expect(cache.isLoading(key), "the icon is being read from disk")
+        await fetch(loader, url, into: cache)
+        expect(cache.image(forKey: key).map(color) == orange, "the list hears once the file's icon is in: \(String(describing: cache.image(forKey: key).map(color)))")
+        expect(site.paths.isEmpty, "and the site isn't asked: \(site.paths)")
     }
 
     /// crash-zen-favicon-size: an SVG may declare any size, and drawing it at that size ran out of memory.

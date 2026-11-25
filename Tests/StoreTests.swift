@@ -101,6 +101,9 @@ enum StoreTests {
         newIconNotifiesOnlyItsKey()
         prefetchDecodesIconsAndTheirTone()
         trimmedIconsReadTheirFileAgain()
+        iconStoredWhileLoadingStays()
+        loadingIconShowsTheSitesMeanwhile()
+        iconStillBeingWrittenSurvivesATrim()
         folderSymbols()
         moveTabToSpace()
         moveFolderToSpace()
@@ -2883,6 +2886,71 @@ enum StoreTests {
         let again = cache.image(forKey: dropped)
         expect(again != nil && again !== droppedImage, "a dropped icon reads its file again when next shown")
         expect(cache.glyphIsDark(forKey: dropped) == true, "and its tone is worked out again")
+    }
+
+    /// A page reports its icon while the list's prefetch still reads the old file: the page's icon stays
+    /// when the batch lands, and what showed it was told once, when it was stored.
+    @MainActor
+    private static func iconStoredWhileLoadingStays() {
+        let key = FaviconKey.key(site: "stored-while-loading.example", tabID: UUID())
+        writeGlyph(.black, forKey: key)
+        let cache = FaviconCache()
+        var landed = false
+        cache.prefetch([key]) { landed = true }
+        let page = pageIcon("icon-blue.png")
+        cache.store(page, forKey: key)
+        let told = watching(cache, key)
+        let deadline = Date().addingTimeInterval(10)
+        while !landed && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        expect(landed && !cache.isLoading(key), "the prefetch lands")
+        expect(cache.image(forKey: key) === page, "the icon stored meanwhile stays, not the file's")
+        expect(!told.on, "and what showed it isn't told again as the batch lands")
+    }
+
+    /// While a tab's own icon is read off the main thread, its row shows the site's icon when that is in
+    /// memory, not none; a list that observes nothing (Library ▸ Boosts) hears when it lands.
+    @MainActor
+    private static func loadingIconShowsTheSitesMeanwhile() {
+        let site = "loading-meanwhile.example"
+        let key = FaviconKey.key(site: site, tabID: UUID())
+        writeGlyph(.black, forKey: key)
+        let cache = FaviconCache()
+        let siteIcon = pageIcon("icon-orange.png")
+        cache.store(siteIcon, forKey: site, persist: false)
+        var landed = false, heard = false
+        cache.prefetch([key]) { landed = true }
+        cache.whenLoaded(key) { heard = true }
+        expect(cache.isLoading(key) && cache.image(forKey: key) === siteIcon, "while the tab's icon is read, the site's shows")
+        expect(!heard, "a list waiting on it isn't told before it lands")
+        let deadline = Date().addingTimeInterval(10)
+        while !landed && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        expect(landed && heard, "and is told when it lands")
+        let own = cache.image(forKey: key)
+        expect(own != nil && own !== siteIcon && own?.size == NSSize(width: 32, height: 32), "then the tab's own icon shows")
+        var now = false
+        cache.whenLoaded(key) { now = true }
+        expect(now, "a key not loading is answered at once")
+    }
+
+    /// Short of memory right after an icon arrives: its file isn't written yet, so it stays in memory
+    /// rather than read back as missing (SiteIconQueue asks for a site's icon once a launch).
+    @MainActor
+    private static func iconStillBeingWrittenSurvivesATrim() {
+        let key = "being-written-\(UUID().uuidString.lowercased()).example"
+        let cache = FaviconCache()
+        let icon = pageIcon("icon-orange.png")
+        cache.store(icon, forKey: key)
+        cache.trimForMemoryPressure(keeping: [])
+        expect(cache.image(forKey: key) === icon, "an icon whose file is still being written stays in memory")
+        var dropped = false
+        let deadline = Date().addingTimeInterval(10)
+        while !dropped && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            cache.trimForMemoryPressure(keeping: [])
+            let again = cache.image(forKey: key)
+            dropped = again != nil && again !== icon
+        }
+        expect(dropped, "once written, a trim lets it go and it reads its file again")
     }
 
     // promise: #54

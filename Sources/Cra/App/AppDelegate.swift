@@ -460,14 +460,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         for w in mainWindows { w.browsers.sleepIdleTabs(policy) }
     }
 
-    /// The icon keys a row shows: every sidebar item's (favorites and pinned tabs' home icons included) and
-    /// each Little Window's page.
+    /// The icon keys a row shows: every sidebar item's (favorites and pinned tabs' home icons included),
+    /// each Little Window's page and the Peek badges on the tabs they came from.
     private func shownFaviconKeys() -> Set<String> {
         var keys = Set<String>()
         for tab in store.items.values.compactMap(\.tab) {
             for key in [tab.faviconKey, tab.customIconKey, FaviconKey.key(for: tab.savedURL)] { if let key { keys.insert(key) } }
         }
         for little in littleWindows { if let key = FaviconKey.key(for: little.currentURL) { keys.insert(key) } }
+        for window in mainWindows { keys.formUnion(window.sidebarUI.peekBadges.values.compactMap(\.iconKey)) }
         return keys
     }
 
