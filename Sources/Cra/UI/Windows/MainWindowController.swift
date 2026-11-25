@@ -1496,9 +1496,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     }
 
     func browserManager(download: CraDownloadInfo) {
+        reportDownload(download, from: browsers.downloadSourceTab.map(DownloadOwner.Source.tab))
+    }
+
+    /// A download's progress, from a tab of this window or from a Little Window or Peek (`source`), which
+    /// it is saved under the profile of (DownloadOwner). The source is kept for the report that finishes it
+    /// once its page is gone (checkStalledDownloads, a Little Window closed while it ran).
+    func reportDownload(_ download: CraDownloadInfo, from reported: DownloadOwner.Source?) {
+        let source = reported ?? downloadSources[download.identifier]
+        if download.state == .inProgress { downloadSources[download.identifier] = source } else { downloadSources[download.identifier] = nil }
         let name = (download.fullPath as NSString).lastPathComponent.isEmpty ? download.suggestedName : (download.fullPath as NSString).lastPathComponent
         if download.state == .inProgress, !finishedDownloads.contains(download.identifier),
-           let tab = browsers.downloadSourceTab, let item = store.item(tab), let t = item.tab {
+           case .tab(let tab) = source, let item = store.item(tab), let t = item.tab {
             TidyDownloadsService.shared.noteSource(download.identifier, window: windowID, tabID: tab, tab: t,
                 referrer: t.referrerID.flatMap { store.item($0)?.tab })
         }
@@ -1524,7 +1533,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
             TidyDownloadsService.shared.cancel(download.identifier, window: windowID)
         }
         if download.state == .complete, !download.fullPath.isEmpty, finishedDownloads.insert(download.identifier).inserted {
-            DownloadHistory.shared.add(path: download.fullPath, profile: browsers.downloadSourceTab.map(store.profileDirectoryName(item:)) ?? profileDirectoryName)
+            DownloadHistory.shared.add(path: download.fullPath, profile: DownloadOwner.profile(
+                source: source, mainProfile: profileDirectoryName, tabProfile: store.profileDirectoryName(item:),
+                directory: { store.profile($0)?.directoryName ?? "Default" }))
             // The address's scheme only, never the file: scenarios wait for this line.
             CraLog.note("Download finished from a \(URL(string: download.url)?.scheme ?? "unknown"): address")
             let id = download.identifier
@@ -1548,6 +1559,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     private var downloadWatchdog: Timer?
     /// Downloads logged as stuck, once each.
     private var stuckDownloads: Set<UInt32> = []
+    /// Where each running download came from (reportDownload).
+    private var downloadSources: [UInt32: DownloadOwner.Source] = [:]
 
     /// Chromium stops reporting a download once the tab that started it is gone (the
     /// download carries on, or ends, silently), which left its row "in progress" for
