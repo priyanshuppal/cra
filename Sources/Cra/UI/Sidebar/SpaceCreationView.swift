@@ -766,6 +766,8 @@ final class SpaceCreationButton: NSView {
 /// The page's picture: three tilted cards, Cra's own drawing of the idea (a palm, a laptop, books).
 @MainActor
 final class SpaceCreationPicture: NSView {
+    private var emojiLayers: [CATextLayer] = []
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -787,7 +789,8 @@ final class SpaceCreationPicture: NSView {
             text.string = emoji[i]
             text.fontSize = 18
             text.alignmentMode = .center
-            text.contentsScale = 2
+            text.contentsScale = window?.backingScaleFactor ?? 2
+            emojiLayers.append(text)
             text.frame = CGRect(x: 0, y: 6, width: 28, height: 24)
             card.addSublayer(text)
             layer?.addSublayer(card)
@@ -795,4 +798,19 @@ final class SpaceCreationPicture: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// The emoji are rasterised at the window's scale, and again when it moves to a display of another.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        followBackingScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        followBackingScale()
+    }
+
+    private func followBackingScale() {
+        for text in emojiLayers { text.contentsScale = window?.backingScaleFactor ?? 2 }
+    }
 }

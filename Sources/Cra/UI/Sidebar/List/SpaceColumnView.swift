@@ -1444,7 +1444,7 @@ final class FavoriteTileView: NSView, ArcTooltipTarget, NSDraggingSource {
         countdown.fontSize = 9
         countdown.font = NSFont.systemFont(ofSize: 9, weight: .semibold)
         countdown.alignmentMode = .right
-        countdown.contentsScale = 2
+        countdown.contentsScale = window?.backingScaleFactor ?? 2
         countdown.isHidden = true
         layer?.addSublayer(countdown)
         calendarObserver = NotificationCenter.default.addObserver(forName: LiveCalendarClient.changed, object: nil, queue: .main) { [weak self] _ in
@@ -1574,8 +1574,15 @@ final class FavoriteTileView: NSView, ArcTooltipTarget, NSDraggingSource {
         badgeRoom.isHidden = peekBadge == nil
         unreadDot.frame = CGRect(x: bounds.width - 5 - 6, y: 5, width: 6, height: 6)
         countdown.frame = CGRect(x: 4, y: 3, width: bounds.width - 9, height: 12)
+        countdown.contentsScale = window?.backingScaleFactor ?? 2
         focusRing?.frame = bounds
         CATransaction.commit()
+    }
+
+    /// The countdown is rasterised at the window's scale, and again when it moves to a display of another.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        countdown.contentsScale = window?.backingScaleFactor ?? 2
     }
 
     /// Arc puts the badge on when a Peek starts from the favorite and takes it off when the

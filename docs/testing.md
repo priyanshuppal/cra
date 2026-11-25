@@ -112,6 +112,9 @@ a finding fails, and when one loses a finding the baseline comes down
   ([CLAUDE.md](../CLAUDE.md) has the layers).
 - `perf-no-network`: networking under either Perf folder. The performance recorder never sends
   anything ([performance.md](performance.md)).
+- `literal-contents-scale`: `contentsScale = 2` or any number. The layer is soft on a 1x display
+  and never follows the window to another; use `window?.backingScaleFactor` and set it again in
+  `viewDidChangeBackingProperties`.
 - `perf-boundary`: the recorder reached from a file outside its list, or `CraCEF` imported in
   `Sources/Cra/Perf` anywhere but `PerfCEF.swift`, so it stays removable and testable.
 
