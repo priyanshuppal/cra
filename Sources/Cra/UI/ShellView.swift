@@ -1340,7 +1340,9 @@ final class ShellView: NSView {
         // Reduce motion: the sidebar and page don't travel; the window dissolves from the old layout to the new, no
         // slower than the slide would have been.
         var duration = duration
+        var dissolves = false
         if duration > 0, case .crossfade(let dissolve) = ReducedMotion.now(.slide) {
+            dissolves = true
             let fade = min(dissolve, duration)
             duration = 0
             dissolveNextChange(fade)
@@ -1373,6 +1375,7 @@ final class ShellView: NSView {
         if paneCards.count == 1, let c = paneCards.first { c.cornerRadius = target.cornerRadius }
         layoutContentChildren()
         startSlideReadout()
+        slideDissolves = dissolves
         animatingFrames = true
         // Arc 1.172.1's ⌘S at 60 fps (CraCore SidebarMotion): about 43 / 72 / 89 / 97 % of the travel
         // after frames 1–4.
@@ -1467,10 +1470,15 @@ final class ShellView: NSView {
         slideSampler = timer
     }
 
+    /// The slide is a Reduce motion dissolve: it ends in the same call, before its new layout is committed, so the
+    /// page's presentation layer still shows the old frame and its one sample would be skipped as not yet drawn.
+    private var slideDissolves = false
+
     private func sampleSlidingPage() {
         guard let layer = focusedCard?.webArea.subviews.first?.layer else { return }
-        let drawn = layer.presentation() ?? layer
-        slidingPage?.record(drawn.convert(drawn.bounds, to: nil), drawn: drawn.frame == layer.frame)
+        // A dissolve doesn't travel: the page is sampled once, where the dissolve shows it (the model layer).
+        let drawn = slideDissolves ? layer : (layer.presentation() ?? layer)
+        slidingPage?.record(drawn.convert(drawn.bounds, to: nil), drawn: slideDissolves || drawn.frame == layer.frame)
     }
 
     private func endSlideReadout() {
