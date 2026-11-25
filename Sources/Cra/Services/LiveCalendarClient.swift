@@ -22,9 +22,17 @@ final class LiveCalendarClient {
     private(set) var dismissed: Set<String> = []
     private var running: [String: HiddenPage] = [:]
     private var waiting: [String: [() -> Void]] = [:]
-    private var timer: Timer?
-    /// Calendar favorites seen lately (key → favorite URL and profile), refreshed by the timer.
+    /// The 30 s tick, running only while a browser window is on screen.
+    private var tick: ScheduledWork?
+    private let scheduler: Scheduler = LiveScheduler.shared
+    private var observers: [NSObjectProtocol] = []
+    /// Calendar favorites seen lately (key → favorite URL and profile), refreshed by the tick.
     private var watched: [String: (favorite: String, profile: String?)] = [:]
+    /// When each favorite's last read began, answered or not (CalendarPreview.refreshDue).
+    private var attempted: [String: Date] = [:]
+    /// What started the last read, and how many began (cra://debug?liveCalendar).
+    private var lastReason = "none"
+    private var fetches = 0
 
     private static func key(_ embed: String, _ profile: String?) -> String { embed + "|" + (profile ?? "") }
 
@@ -32,28 +40,76 @@ final class LiveCalendarClient {
         CalendarPreview.embedURL(for: favorite).flatMap { states[Self.key($0, profilePath)] }
     }
 
-    /// A Calendar favorite is in a sidebar: keep its events fresh (every 5 minutes, as the
-    /// countdown and Join link need them without a hover).
+    /// A Calendar favorite is in a sidebar: keep its events fresh (every 5 minutes while Cra is in
+    /// use, as the countdown and Join link need them without a hover).
     func watch(favorite: String, profilePath: String?) {
         guard let embed = CalendarPreview.embedURL(for: favorite) else { return }
         let k = Self.key(embed, profilePath)
         guard watched[k] == nil else { return }
         watched[k] = (favorite, profilePath)
-        refresh(favorite: favorite, profilePath: profilePath, ifOlderThan: 60)
-        if timer == nil {
-            // Every 30 s the countdown and the Join link move on; every 5 min the events are read again.
-            var ticks = 0
-            let t = Timer(timeInterval: 30, repeats: true) { _ in
-                MainActor.assumeIsolated {
-                    let s = LiveCalendarClient.shared
-                    ticks += 1
-                    if ticks % 10 == 0 { for w in s.watched.values { s.refresh(favorite: w.favorite, profilePath: w.profile) } }
-                    NotificationCenter.default.post(name: LiveCalendarClient.changed, object: nil)
-                }
-            }
-            RunLoop.main.add(t, forMode: .common)
-            timer = t
+        refresh(favorite: favorite, profilePath: profilePath, ifOlderThan: 60, reason: "watch")
+        if observers.isEmpty {
+            let center = NotificationCenter.default
+            observers = [
+                // Back in use: read what is more than 5 minutes old, and move the countdown on.
+                center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated { LiveCalendarClient.shared.resume(reason: "activation") }
+                },
+                // A window comes on screen (the tick starts) or goes (it stops); the tick reads what is due.
+                center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated { LiveCalendarClient.shared.resume(reason: nil) }
+                },
+            ]
         }
+        resume(reason: nil)
+    }
+
+    /// Whether a browser window is on screen: the tiles' countdown and Join link are seen.
+    private var onScreen: Bool {
+        NSApp.windows.contains { $0.windowController is MainWindowController && $0.isVisible && $0.occlusionState.contains(.visible) }
+    }
+
+    /// Starts the 30 s tick while a browser window is on screen and stops it while none is; with a
+    /// reason, reads what is due now (CalendarPreview.refreshDue).
+    private func resume(reason: String?) {
+        guard !watched.isEmpty else { return }
+        guard onScreen else {
+            tick?.cancel()
+            tick = nil
+            return
+        }
+        if tick == nil {
+            // Every 30 s the countdown and the Join link move on; every 5 min (in use) the events are read again.
+            tick = scheduler.every(30) { LiveCalendarClient.shared.tickFired() }
+            NotificationCenter.default.post(name: Self.changed, object: nil)
+        }
+        if let reason { refreshDue(reason: reason) }
+    }
+
+    /// The 30 s tick (cra://debug?liveCalendarTick runs it at once).
+    func tickFired() {
+        guard onScreen else {
+            tick?.cancel()
+            tick = nil
+            return
+        }
+        refreshDue(reason: "tick")
+        NotificationCenter.default.post(name: Self.changed, object: nil)
+    }
+
+    private func refreshDue(reason: String) {
+        let now = scheduler.now, active = NSApp.isActive, seen = onScreen
+        for (k, w) in watched where CalendarPreview.refreshDue(lastFetch: attempted[k], now: now, appActive: active, onScreen: seen) {
+            refresh(favorite: w.favorite, profilePath: w.profile, reason: reason)
+        }
+    }
+
+    /// cra://debug?liveCalendar=<label>: "ticking=<0|1> reason=<what began the last read> fetches=<n>".
+    var debugState: String { "ticking=\(tick == nil ? 0 : 1) reason=\(lastReason) fetches=\(fetches)" }
+
+    /// cra://debug?liveCalendarAge=<s>: every read as if it began that long ago.
+    func debugBackdate(_ seconds: TimeInterval) {
+        for k in attempted.keys { attempted[k] = scheduler.now.addingTimeInterval(-seconds) }
     }
 
     /// Arc's "Join next video conference" command: the call on now, else the next one today,
@@ -70,7 +126,7 @@ final class LiveCalendarClient {
 
     /// Reads the favorite's calendar unless it was read within `age` seconds; `then` runs once
     /// there is an answer (or none in 25 s).
-    func refresh(favorite: String, profilePath: String?, ifOlderThan age: TimeInterval = 0, then: (() -> Void)? = nil) {
+    func refresh(favorite: String, profilePath: String?, ifOlderThan age: TimeInterval = 0, reason: String = "asked", then: (() -> Void)? = nil) {
         guard let embed = CalendarPreview.embedURL(for: favorite) else { then?(); return }
         let k = Self.key(embed, profilePath)
         if age > 0, let f = states[k]?.fetched, Date().timeIntervalSince(f) < age { then?(); return }
@@ -79,7 +135,10 @@ final class LiveCalendarClient {
         let now = Date(), cal = Calendar.current
         let from = cal.startOfDay(for: now)
         let to = cal.date(byAdding: .day, value: 2, to: from) ?? now.addingTimeInterval(2 * 86400)
-        CraLog.note("live calendar fetch begins (\(profilePath == nil ? "default profile" : "space profile"))")
+        attempted[k] = scheduler.now
+        lastReason = reason
+        fetches += 1
+        CraLog.note("live calendar fetch begins (\(profilePath == nil ? "default profile" : "space profile"), \(reason))")
         running[k] = HiddenPage(url: embed, profilePath: profilePath, script: CalendarPreview.fetchScript(from: from, to: to)) { [weak self] answer in
             self?.finish(k, answer.map(CalendarPreview.parse) ?? .failed)
         }

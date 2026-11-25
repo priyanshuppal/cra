@@ -1,0 +1,46 @@
+# A Calendar favorite's events are read again only while Cra is in use. Each read starts a hidden Chrome page (a
+# renderer, Google Calendar's scripts, the network): every 5 minutes for as long as Cra ran, behind other apps, with
+# its windows hidden or the display asleep. Now the 30 s tick reads only while Cra is the active app with a window on
+# screen, Cra coming forward reads what is more than 5 minutes old, and the tick stops while no window is on screen.
+# Offline every read fails; what counts here is which reads begin (liveCalendarAge makes the last one old).
+requires screen
+env CRA_TEST_BACKGROUND=0
+budget rss=700 stalls50=10
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true}
+seed sidebar.json {"version":1,"spaceOrder":["A0000000-0000-0000-0000-000000000001"],"spaces":[{"id":"A0000000-0000-0000-0000-000000000001","title":"Home","emoji":"🏠","theme":{"colors":["#8389FF","#8389FF"],"intensity":0.5,"noise":0,"appearance":"light","accent":"#8389FF","solid":true,"key":["#8389FF"]},"favoritesContainerID":"C0000000-0000-0000-0000-000000000011","pinnedContainerID":"C0000000-0000-0000-0000-000000000012","todayContainerID":"C0000000-0000-0000-0000-000000000013","createdAt":"2026-11-06T08:00:00Z"}],"items":[{"id":"C0000000-0000-0000-0000-000000000011","children":["E0000000-0000-0000-0000-000000000001"],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"favorites":{"spaceID":"A0000000-0000-0000-0000-000000000001"}}}}},{"id":"C0000000-0000-0000-0000-000000000012","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"pinned":{"spaceID":"A0000000-0000-0000-0000-000000000001"}}}}},{"id":"C0000000-0000-0000-0000-000000000013","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"today":{"spaceID":"A0000000-0000-0000-0000-000000000001"}}}}},{"id":"E0000000-0000-0000-0000-000000000001","parentID":"C0000000-0000-0000-0000-000000000011","children":[],"isUnread":false,"createdAt":"2026-11-06T09:00:00Z","data":{"tab":{"_0":{"url":"https://calendar.google.com/calendar/u/0/r","savedTitle":"Google Calendar"}}}}]}
+
+# The favorite's first read, with the sidebar.
+expect-log live calendar fetch begins \(default profile, watch\)
+cra://debug?activate=1
+wait 1
+cra://debug?liveCalendar=front
+expect-log live calendar front: ticking=1 reason=watch fetches=1 active=1
+
+# In use, on screen: an old read is read again at the tick.
+cra://debug?liveCalendarAge=600
+cra://debug?liveCalendarTick=1
+wait 1
+cra://debug?liveCalendar=cadence
+expect-log live calendar cadence: ticking=1 reason=tick fetches=2 active=1
+
+# Behind another app, its window still on screen: the tick goes on (the countdown, the Join link), the reads wait.
+cra://debug?deactivate=1
+wait 1
+cra://debug?liveCalendarAge=600
+cra://debug?liveCalendarTick=1
+wait 1
+cra://debug?liveCalendar=behind
+expect-log live calendar behind: ticking=1 reason=tick fetches=2 active=0
+
+# Back in front: the old read is read again at once.
+cra://debug?activate=1
+wait 1
+cra://debug?liveCalendar=back
+expect-log live calendar back: ticking=1 reason=activation fetches=3 active=1
+
+# No window on screen: the tick stops.
+cra://debug?minimize=1
+wait 2
+cra://debug?liveCalendar=minimized
+expect-log live calendar minimized: ticking=0 reason=activation fetches=3
+reject-log fault:
