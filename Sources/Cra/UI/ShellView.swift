@@ -1340,7 +1340,7 @@ final class ShellView: NSView {
         // A slide still running is replaced: what rode along with it finishes now, once, after its readout, so a
         // dock that ends this way still says how far the page moved (on a slow machine the next slide came first,
         // and sidebar-dock-floating's "page moved 0 pt" went missing).
-        if sidebarSlide != nil { endSlideReadout() }
+        if let s = sidebarSlide { endSlideReadout(pacing: s.pacing) }
         finishSlideCompanions()
         slideAlongside = alongside
         slideCompletion = completion
@@ -1393,6 +1393,8 @@ final class ShellView: NSView {
         /// display link's first tick lands a refresh or two after the call, plus whatever the ⌘S handler still
         /// does, and timed from the call that much of the 85 ms was gone before anything drew.
         var clock: SettleClock
+        /// How evenly its frames came, for the end readout.
+        var pacing = FramePacing()
         let duration: TimeInterval
         let visible: Bool, floating: Bool, fullscreen: Bool
     }
@@ -1416,8 +1418,12 @@ final class ShellView: NSView {
 
     @objc private func stepSidebarSlide(_ link: CADisplayLink) {
         guard var s = sidebarSlide else { return finishSidebarSlide() }
+        // What the last frame drew, once per frame (the page's layer has committed it by this tick).
+        sampleSlidingPage()
         let first = s.clock.origin == nil
-        let t = s.clock.elapsed(atFrame: link.targetTimestamp, interval: link.targetTimestamp - link.timestamp)
+        let interval = link.targetTimestamp - link.timestamp
+        let t = s.clock.elapsed(atFrame: link.targetTimestamp, interval: interval)
+        s.pacing.record(timestamp: link.targetTimestamp, interval: interval)
         sidebarSlide = s
         guard t < s.duration else { return finishSidebarSlide() }
         let p = SidebarMotion.progress(at: t, duration: s.duration)
@@ -1446,26 +1452,20 @@ final class ShellView: NSView {
         contentFullscreen = s.fullscreen
         needsLayout = true
         layoutSubtreeIfNeeded()
-        endSlideReadout()
+        endSlideReadout(pacing: s.pacing)
         onSidebarSlideFrame?()
         finishSlideCompanions()
     }
 
     /// Logged as "sidebar slide: page moved N pt" for the sidebar-slide scenario.
     private var slidingPage: SidebarSlidePage?
-    private var slideSampler: Timer?
     /// The completed slide's page drift, so a transition-specific readout can identify its own slide.
     private(set) var lastSidebarSlidePageDrift: Int?
 
+    /// Sampled once per frame by the slide's display link (stepSidebarSlide) and at its end, not by a timer.
     private func startSlideReadout() {
-        slideSampler?.invalidate()
         slidingPage = SidebarSlidePage()
         lastSidebarSlidePageDrift = nil
-        let timer = Timer(timeInterval: 1.0 / 240, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.sampleSlidingPage() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        slideSampler = timer
     }
 
     private func sampleSlidingPage() {
@@ -1474,16 +1474,15 @@ final class ShellView: NSView {
         slidingPage?.record(drawn.convert(drawn.bounds, to: nil), drawn: drawn.frame == layer.frame)
     }
 
-    private func endSlideReadout() {
+    private func endSlideReadout(pacing: FramePacing) {
         sampleSlidingPage()
-        slideSampler?.invalidate()
-        slideSampler = nil
         if let slide = slidingPage, !slide.isEmpty {
             let drift = Int(slide.drift.rounded())
             lastSidebarSlidePageDrift = drift
             let onLeft = window?.sidebarSide != .right
             let near = Int(slide.nearEdgeDrift(sidebarOnLeft: onLeft).rounded()), far = Int(slide.farEdgeDrift(sidebarOnLeft: onLeft).rounded())
-            CraLog.note("sidebar slide: page moved \(drift) pt over \(slide.samples) frames (near edge \(near) pt, far edge \(far) pt, \(FeatureFlags.current.sidebarSlide.rawValue))")
+            CraLog.note("sidebar slide: page moved \(drift) pt over \(slide.samples) frames (near edge \(near) pt, far edge \(far) pt, \(FeatureFlags.current.sidebarSlide.rawValue))"
+                        + (pacing.frames > 0 ? " at \(pacing.hz) Hz, \(pacing.missed) missed, longest \(pacing.longestGapMs) ms" : ""))
         }
         slidingPage = nil
     }
