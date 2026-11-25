@@ -12,9 +12,12 @@ public enum SidebarMotion {
     /// so the two can't drift apart (they had faded on NSAnimationContext's default timing).
     public static var buttonsFade: (duration: TimeInterval, curve: (Double, Double, Double, Double)) { (duration, curve) }
 
-    /// The share of the travel done `t` seconds in.
+    /// The share of the travel done `t` seconds in: exactly 0 at the start and 1 at the end, where
+    /// the bisection below would land a hair inside (a leaving row starts at 0.99999…, not opaque).
     public static func progress(at t: TimeInterval, curve c: (Double, Double, Double, Double) = curve, duration: TimeInterval = duration) -> Double {
         let x = min(1, max(0, t / duration))
+        if x == 0 { return 0 }
+        if x == 1 { return 1 }
         var lo = 0.0, hi = 1.0
         for _ in 0..<50 {
             let s = (lo + hi) / 2
