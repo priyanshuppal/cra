@@ -10,9 +10,8 @@ import Security
 enum NewestCopy {
     static let version = shortVersion(at: Bundle.main.bundleURL) ?? ""
 
-    /// Numeric, so 0.1.10 is newer than 0.1.9 and 0.0.0-dev is older than any release.
     static func isOlder(_ a: String, than b: String) -> Bool {
-        a.compare(b, options: .numeric) == .orderedAscending
+        NewestCopyChoice.isOlder(a, than: b)
     }
 
     /// Read from disk rather than through Bundle, which caches Info.plist per path.
@@ -23,22 +22,23 @@ enum NewestCopy {
     /// An installed release opened while a newer one sits elsewhere on the Mac opens that
     /// one and exits. Only signed releases on the default data dir take part: dev builds
     /// (0.0.0-dev, no SUFeedURL) and CRA_DATA_DIR copies must run as themselves.
+    /// Teams are read only when a newer copy is found: our own one cost 200-500 ms of
+    /// hashing on every release launch while LaunchServices usually lists only this copy.
     static func openNewerInstalledCopy() {
         guard ProcessInfo.processInfo.environment["CRA_DATA_DIR"] == nil,
               Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
-              let id = Bundle.main.bundleIdentifier, let team = teamID(of: Bundle.main.bundleURL) else { return }
+              let id = Bundle.main.bundleIdentifier else { return }
         let me = Bundle.main.bundleURL.resolvingSymlinksInPath().path
-        let newer = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: id)
+        let candidates = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: id)
             .map { $0.resolvingSymlinksInPath() }
             .filter { $0.path != me && isInstalled($0) }
-            .compactMap { url in shortVersion(at: url).map { (url: url, version: $0) } }
-            .filter { isOlder(version, than: $0.version) && teamID(of: $0.url) == team }
-            .max { isOlder($0.version, than: $1.version) }
-        guard let newer else { return }
-        NSLog("Cra: \(version) at \(me) opens the newer \(newer.version) at \(newer.url.path)")
+            .compactMap { url in shortVersion(at: url).map { (id: url, version: $0) } }
+        guard let newer = NewestCopyChoice.newer(current: version, candidates: candidates,
+                                                 ownTeam: ownTeamID, teamOf: teamID(of:)) else { return }
+        NSLog("Cra: \(version) at \(me) opens the newer \(newer.version) at \(newer.id.path)")
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = [newer.url.path]
+        open.arguments = [newer.id.path]
         guard (try? open.run()) != nil else { return }
         open.waitUntilExit()
         if open.terminationStatus == 0 { exit(0) }
@@ -119,7 +119,20 @@ enum NewestCopy {
             && !p.contains("/.Trash/") && !p.contains("/AppTranslocation/")
     }
 
-    /// The signing team, checked without hashing every resource (CEF is large);
+    /// This process's signing team. The kernel validated the running code when it loaded,
+    /// so no check here (as SafeStorage.isSignedByTeam). nil for ad-hoc builds.
+    private static func ownTeamID() -> String? {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var info: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess
+        else { return nil }
+        return (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
+    }
+
+    /// Another copy's signing team, checked without hashing every resource (CEF is large);
     /// Gatekeeper checks the whole bundle when it opens. nil for ad-hoc builds.
     private static func teamID(of bundle: URL) -> String? {
         var code: SecStaticCode?
