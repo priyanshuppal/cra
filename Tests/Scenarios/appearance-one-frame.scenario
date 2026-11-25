@@ -1,16 +1,19 @@
 # A switch of macOS' appearance (Automatic at sunset, or View ▸ Appearance) recolours the sidebar, the
 # window's backdrop and the empty card in one main-thread turn, so no frame shows half the old look.
 # systemAppearance=…&themeShown=… reads them back in the turn of the switch, before anything deferred
-# runs. Until 0.1.55 the backdrop and sidebar waited a main-queue hop behind the card. The first space
-# is on Auto, with no tab (empty-card-appearance.scenario).
+# runs. Until 0.1.55 the backdrop and sidebar waited a main-queue hop behind the card. The seed is
+# empty-card-appearance.scenario's: the first space, Pastel (#FFCBD1), is on Auto (it follows macOS) and
+# has no tab, so its empty card's veil is CardVeil.noTabCard's 0.65 on Light and its 0.35 cap on Dark.
+# The first launch's own Personal space is fixed Dark and would never switch.
 budget rss=700 stalls50=10
 seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true}
+seed sidebar.json {"version":1,"spaceOrder":["A0000000-0000-0000-0000-000000000001","A0000000-0000-0000-0000-000000000002"],"spaces":[{"id":"A0000000-0000-0000-0000-000000000001","title":"Pastel","emoji":"\ud83c\udf38","favoritesContainerID":"C0000000-0000-0000-0000-000000000011","pinnedContainerID":"C0000000-0000-0000-0000-000000000012","todayContainerID":"C0000000-0000-0000-0000-000000000013","createdAt":"2026-11-06T08:00:00Z","theme":{"colors":["#FFCBD1","#FFCBD1"],"intensity":0.8,"noise":0,"appearance":"auto","accent":"#FFCBD1","solid":true,"key":["#FFCBD1"]}},{"id":"A0000000-0000-0000-0000-000000000002","title":"Navy","emoji":"\ud83c\udf0a","favoritesContainerID":"C0000000-0000-0000-0000-000000000021","pinnedContainerID":"C0000000-0000-0000-0000-000000000022","todayContainerID":"C0000000-0000-0000-0000-000000000023","createdAt":"2026-11-06T08:00:00Z","theme":{"colors":["#26456B","#26456B"],"intensity":0.8,"noise":0,"appearance":"dark","accent":"#26456B","solid":true,"key":["#26456B"]}}],"items":[{"id":"C0000000-0000-0000-0000-000000000011","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"favorites":{"spaceID":"A0000000-0000-0000-0000-000000000001"}}}}},{"id":"C0000000-0000-0000-0000-000000000012","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"pinned":{"spaceID":"A0000000-0000-0000-0000-000000000001"}}}}},{"id":"C0000000-0000-0000-0000-000000000013","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"today":{"spaceID":"A0000000-0000-0000-0000-000000000001"}}}}},{"id":"C0000000-0000-0000-0000-000000000021","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"favorites":{"spaceID":"A0000000-0000-0000-0000-000000000002"}}}}},{"id":"C0000000-0000-0000-0000-000000000022","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"pinned":{"spaceID":"A0000000-0000-0000-0000-000000000002"}}}}},{"id":"C0000000-0000-0000-0000-000000000023","children":[],"isUnread":false,"createdAt":"2026-11-06T08:00:00Z","data":{"container":{"_0":{"today":{"spaceID":"A0000000-0000-0000-0000-000000000002"}}}}}]}
 cra://debug?windowSize=1280x800
 wait 1
 cra://debug?systemAppearance=light
 wait 1
 cra://debug?systemAppearance=dark&themeShown=same-turn-dark
-expect-log Cra theme shown same-turn-dark: .* theme=dark shell=dark sidebar=dark .* card=veil=0\.35
+expect-log Cra theme shown same-turn-dark: space=Pastel follows=1 theme=dark shell=dark sidebar=dark .* card=veil=0\.35
 cra://debug?systemAppearance=light&themeShown=same-turn-light
-expect-log Cra theme shown same-turn-light: .* theme=light shell=light sidebar=light .* card=veil=0\.65
+expect-log Cra theme shown same-turn-light: space=Pastel follows=1 theme=light shell=light sidebar=light .* card=veil=0\.65
 cra://debug?systemAppearance=system
