@@ -67,12 +67,11 @@ final class BackForwardMenuView: NSView, ArcMenuContent {
                 icon.layer?.cornerRadius = L.faviconSize * 0.22
                 icon.layer?.masksToBounds = true
             } else {
-                // Arc's stand-in for a page with no favicon: a 14 pt rounded square, white at 35 %.
-                let inset = (L.faviconSize - L.placeholderSize) / 2
-                let square = NSView(frame: NSRect(x: inset, y: inset, width: L.placeholderSize, height: L.placeholderSize))
+                // Arc's stand-in for a page with no favicon (FaviconPlaceholder), white at 35 % here.
+                let square = NSView(frame: FaviconPlaceholder.frame(inSlot: L.faviconSize))
                 square.wantsLayer = true
-                square.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.35).cgColor
-                square.layer?.cornerRadius = 3
+                square.layer?.backgroundColor = NSColor.white.withAlphaComponent(FaviconPlaceholder.menuAlpha).cgColor
+                square.layer?.cornerRadius = FaviconPlaceholder.cornerRadius
                 square.layer?.cornerCurve = .continuous
                 icon.addSubview(square)
             }

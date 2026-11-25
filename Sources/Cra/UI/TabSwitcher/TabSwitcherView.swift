@@ -260,7 +260,7 @@ private final class TabSwitcherCardView: NSView {
         icon.layer?.cornerCurve = .continuous
         icon.layer?.masksToBounds = true
         placeholder.wantsLayer = true
-        placeholder.layer?.cornerRadius = 4.5
+        placeholder.layer?.cornerRadius = FaviconPlaceholder.cornerRadius(inSlot: M.favicon)
         placeholder.layer?.cornerCurve = .continuous
     }
 
@@ -281,7 +281,8 @@ private final class TabSwitcherCardView: NSView {
         } else {
             view.isHidden = true
             placeholder.isHidden = false
-            placeholder.layer?.backgroundColor = (dark ? NSColor.white.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.1)).cgColor
+            placeholder.layer?.backgroundColor = NSColor(white: FaviconPlaceholder.white(dark: dark),
+                                                         alpha: FaviconPlaceholder.alpha(dark: dark)).cgColor
         }
     }
 
@@ -304,12 +305,14 @@ private final class TabSwitcherCardView: NSView {
         let mid = h - (rowTop + (h - rowTop) / 2)
         let f = NSRect(x: 13.5, y: mid - M.favicon / 2, width: M.favicon, height: M.favicon)
         favicon.frame = f
-        placeholder.frame = f
+        // Arc's square is its 14 pt asset centred in the 16 pt slot.
+        let square = FaviconPlaceholder.frame(inSlot: M.favicon)
+        placeholder.frame = square.offsetBy(dx: f.minX, dy: f.minY)
         // Under a split, each pane's favicon centred under its thumbnail.
         for (views, p) in zip(paneIcons, panes) {
             let r = NSRect(x: M.thumbnailOrigin.x + p.midX - M.favicon / 2, y: f.minY, width: M.favicon, height: M.favicon)
             views.icon.frame = r
-            views.placeholder.frame = r
+            views.placeholder.frame = square.offsetBy(dx: r.minX, dy: r.minY)
         }
         let tx = 13.5 + M.favicon + 8
         title.frame = NSRect(x: tx - SidebarText.inset, y: mid - 17 / 2, width: bounds.width - tx - 10.5 + 2 * SidebarText.inset, height: 17)
