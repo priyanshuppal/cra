@@ -2316,6 +2316,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
                 return
             }
+            // commandBarMove=<n>: the open bar's selection moved n rows, as ↓ (1) and ↑ (-1) move it.
+            if let n = dict["commandBarMove"].flatMap(Int.init) {
+                main.commandBar.moveSelection(by: n)
+                CraLog.note("command bar moved: selected=\(main.commandBar.selectedIndex)")
+                return
+            }
+            // commandBarAX=<i>: the open bar's i-th row as VoiceOver reads it, "command bar ax <i>: label=<label>
+            // selected=<true|false> announced=<the bar's last announcement>", or "none".
+            if let i = dict["commandBarAX"].flatMap(Int.init) {
+                CraLog.note("command bar ax \(i): \(main.debugCommandBarAccessibility(i))")
+                return
+            }
             // commandBarDeleteKey=1 (#779): ⌥⌘⌫ pressed in the open bar, through the app as a key press goes (the menus'
             // key equivalents first). A debug readout, so the browser window isn't raised over the bar first.
             if dict["commandBarDeleteKey"] != nil {
