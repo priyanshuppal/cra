@@ -5521,6 +5521,9 @@ ignore a press with no hover before it), read off full-screen 2x captures with t
   tabs" ("Toast indicating that tabs were archived.") exists too; when Arc shows it isn't in the strings.
 - **Cra:** `SidebarUndo` (CraCore) holds the steps, `SidebarStore.undo()` puts one back, Edit ▸ Undo is titled from
   it. A close stays ⇧⌘T's (ReopenClosedTab), in order with the other steps.
+- **Cra's toasts:** `CloseItemsToast` after Clear ("Cleared Tabs! Use ⌘Z to undo.") and Delete Folder ("Folder
+  deleted! Use ⌘Z to undo."), the keys in ShinyToast's cap. Archive Tabs Above/Below and auto-archive stay silent:
+  Arc's strings name no toast for the first, and say nothing of when "Auto archived %d tabs" shows.
 - **Open questions:** Arc's titles for a closed tab, a closed Peek and Delete Folder (Cra: Close Tab, Close Peek,
   Delete Folder); whether Archive Tabs Above/Below show a toast (Archive Tabs on several picks showed none, see
   above); Redo.

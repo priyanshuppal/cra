@@ -1,5 +1,5 @@
 # ⌘Z after Clear brings every cleared Today tab back, in its order, as Arc's "Undo Clear Tabs" did. ⌘Z
-# reopened only the tab closed last, so after clearing two tabs it brought back one.
+# reopened only the tab closed last, so after clearing two tabs it brought back one. Clear says so in a toast.
 budget rss=800 stalls50=30
 seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false}
 pace 0.5
@@ -11,6 +11,9 @@ wait 1
 cra://open?url=${PAGE}?n=shown
 wait 1
 cra://action/clearToday
+# Arc's toast says so, with ⌘Z in a key cap: "Cleared Tabs! Use ⌘Z to undo."
+cra://debug?toastShown=clear
+expect-log toast shown clear: yes
 wait 1
 cra://debug?applescript=tell%20current%20application%20to%20count%20%C2%ABclass%20tAbB%C2%BB%20of%20%C2%ABclass%20WiND%C2%BB%201
 expect-log Cra applescript → 1$

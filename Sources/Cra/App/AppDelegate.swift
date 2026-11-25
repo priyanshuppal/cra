@@ -157,6 +157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             if startOnNewTab { DispatchQueue.main.async { [weak self] in self?.main.openCommandBar(.newTab) } }
         }
         installKeyFallbackMonitor()
+        // Arc's toast after Clear and Delete Folder, with ⌘Z in a key cap (CloseItemsCompletionToast).
+        store.onCloseItems = { [weak self] kind, count in
+            let toast = CloseItemsToast.text(kind: kind, count: count)
+            self?.main?.showToast(toast.text, keyCap: toast.keyCap)
+        }
         installSideButtonKeyMonitor()
         installCommandFileWatcher()
         handoff.start()

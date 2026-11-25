@@ -1890,6 +1890,7 @@ final class SidebarStore {
             withoutUndo { deleteFolder(id) }
             if let before {
                 undoStack.record(.init(SidebarUndo.deleteFolder, .archived(inside, before)))
+                if !f.isTabGroup { onCloseItems(.deleteFolder, 1) }
             }
             return
         }
@@ -2296,6 +2297,9 @@ final class SidebarStore {
     @ObservationIgnored private(set) var undoStack = SidebarUndo()
     /// Above zero while a step (or an undo) runs: the edits it is made of record nothing of their own.
     @ObservationIgnored private var undoDepth = 0
+
+    /// Run after Clear or Delete Folder, steps ⌘Z undoes: the app shows Arc's toast saying so (CloseItemsToast).
+    @ObservationIgnored var onCloseItems: (CloseItemsToast.Kind, Int) -> Void = { _, _ in }
 
     /// What Edit ▸ Undo names after "Undo".
     var undoLabel: String? { undoStack.label }
@@ -2852,7 +2856,8 @@ final class SidebarStore {
     /// Arc's Clear on Today (`TodayClear`): the tab each window has on screen in this space and
     /// the tabs in `playing` (the speaker's audible set) stay, with the split or group they're in.
     func clearToday(_ sid: UUID? = nil, playing: Set<UUID>) {
-        archiveBatch(todayClearing(sid, playing: playing), reason: .clear)
+        let cleared = archiveBatch(todayClearing(sid, playing: playing), reason: .clear)
+        if !cleared.isEmpty { onCloseItems(.clear, cleared.count) }
     }
 
     /// Whether Clear on Today would archive anything now: the Tabs menu dims Clear Today when not

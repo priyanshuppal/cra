@@ -3881,8 +3881,11 @@ enum StoreTests {
         expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing a new folder")
 
         // Clear: all five back, in their order, out of the archive.
+        var toasts: [String] = []
+        store.onCloseItems = { kind, count in toasts.append("\(kind) \(count)") }
         expect(Set(store.todayClearing(sid, playing: [])) == Set(tabs), "Clear would take all five")
         store.clearToday(sid, playing: [])
+        expect(toasts == ["clear 5"], "Clear asks for Arc's toast, with its count (was \(toasts))")
         expect(tabs.allSatisfy { store.item($0) == nil } && store.undoLabel == "Clear Tabs", "Clear archives the five: Undo Clear Tabs")
         expect(store.undo() == .undone("Clear Tabs"), "⌘Z undoes the Clear")
         expect(store.item(today)?.children == order && tabs.allSatisfy { id in !store.archive.contains { $0.id == id } },
@@ -3898,6 +3901,7 @@ enum StoreTests {
         store.deleteFolder(work.id)
         expect(store.item(work.id) == nil && store.item(inner.id) == nil && store.item(tabs[0]) == nil && store.undoLabel == "Delete Folder",
                "Delete Folder archives its tabs: Undo Delete Folder")
+        expect(toasts == ["clear 5", "deleteFolder 1"], "Delete Folder asks for its toast (was \(toasts))")
         expect(store.undo() == .undone("Delete Folder"), "⌘Z undoes Delete Folder")
         expect(store.item(pinned)?.children == pinnedBefore && store.item(work.id)?.children == workBefore
                && store.item(inner.id)?.children == [tabs[2]] && store.item(work.id)?.title == "Work",
@@ -3911,6 +3915,10 @@ enum StoreTests {
         expect(store.undoLabel == "Move Item", "auto-archive isn't a step of its own")
         expect(store.undo() == .undone("New Folder…") && store.item(spare.id) == nil, "a step whose items went is skipped for the one before")
         expect(store.integrityProblems().isEmpty, "the sidebar is sound after skipping a step")
+
+        // Clearing nothing says nothing.
+        store.clearToday(store.createSpace(title: "Empty", emoji: "🫙").id, playing: [])
+        expect(toasts.count == 2, "a Clear that archived nothing shows no toast")
 
         // A close is ⇧⌘T's to bring back, after any edit before it.
         store.archiveTab(tabs[4], reason: .manual)
