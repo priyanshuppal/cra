@@ -1,0 +1,35 @@
+# A pane's Split View menu (the pane toolbar's) is Arc's: Move Left, Move Right, Add Right Split, Add Left
+# Split, Separate Tab from Split, Convert to Vertical Split View, Share Split View… (Arc 1.172.2 read live
+# over AX, docs/arc-reverse-engineering.md), then Cra's Copy Link and Close this Split Pane. Moves are
+# greyed out at the ends; a stacked split says Up/Down and Bottom/Top. Move Right swaps the panes.
+budget rss=900 stalls50=20
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false}
+
+cra://debug?windowSize=1200x800
+cra://open?url=${PAGE}?n=left
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+cra://action/addSplitView
+cra://navigate?url=${PAGE}?n=right
+wait 2
+
+cra://debug?paneMenu=1&label=first
+expect-log pane menu first: Move Left \(off\)\|Move Right\|Add Right Split\|Add Left Split\|Separate Tab from Split\|Convert to Vertical Split View\|Share Split View…\|──\|Copy Link\|──\|Close this Split Pane$
+cra://debug?paneMenu=2&label=last
+expect-log pane menu last: Move Left\|Move Right \(off\)\|Add Right Split\|Add Left Split\|
+
+# Move Right on the left pane: it goes right, and stays the open one.
+cra://debug?paneMenu=1&label=move&run=Move Right
+expect-log pane menu move ran Move Right: panes: n=right\+n=left open: n=left$
+wait 1
+cra://debug?paneMenu=2&label=moved
+expect-log pane menu moved: Move Left\|Move Right \(off\)\|
+
+# Stacked: Up/Down, Bottom/Top, and Convert back to horizontal.
+cra://action/flipSplitOrientation
+wait 1
+cra://debug?paneMenu=1&label=stacked
+expect-log pane menu stacked: Move Up \(off\)\|Move Down\|Add Bottom Split\|Add Top Split\|Separate Tab from Split\|Convert to Horizontal Split View\|Share Split View…\|──\|Copy Link\|──\|Close this Split Pane$
+
+# Add Top Split on the top pane: an empty pane above it, open, with the command bar to fill it.
+cra://debug?paneMenu=1&label=add&run=Add Top Split
+expect-log pane menu add ran Add Top Split: panes: -\+n=right\+n=left open: -$

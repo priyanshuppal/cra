@@ -529,6 +529,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         }
         sidebarActions.closePane = { [weak self] id in self?.closeSplitPane(id) }
         sidebarActions.separatePane = { [weak self] id in self?.separatePane(id) }
+        sidebarActions.addPane = { [weak self] id, after in self?.addSplitPane(nextTo: id, after: after) }
         sidebarActions.paneNavigate = { [weak self] id, what in
             guard let self else { return }
             if self.selectedTabID != id { self.store.selectTab(id, window: windowID) }
@@ -949,6 +950,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         CraLog.note("\(kind) \(label) ran \(run): pinned: \(list(space.pinnedContainerID)) today: \(list(space.todayContainerID)) open: \(open)")
     }
 
+    /// `cra://debug?paneMenu=<n>`: logs the n-th split pane's Split View menu (the pane toolbar's, panes left
+    /// to right then top to bottom; rows as menuReadout writes them). `run` picks a row by title and logs
+    /// the open split's panes (page queries, in order) and the open tab.
+    func testPaneMenu(_ n: Int, label: String, run: String?) {
+        func bars(in v: NSView) -> [PaneToolbarView] {
+            if let b = v as? PaneToolbarView, b.paneTabID != nil, !b.isHiddenOrHasHiddenAncestor { return [b] }
+            return v.subviews.flatMap { bars(in: $0) }
+        }
+        let found = (window?.contentView.map(bars(in:)) ?? []).sorted {
+            let a = $0.convert($0.bounds, to: nil), b = $1.convert($1.bounds, to: nil)
+            return a.minX != b.minX ? a.minX < b.minX : a.maxY > b.maxY
+        }
+        guard found.indices.contains(n - 1), let menu = found[n - 1].splitMenu() else { CraLog.note("pane menu \(label): no pane \(n)"); return }
+        CraLog.note("pane menu \(label): \(Self.menuReadout(menu))")
+        guard let run, let i = menu.items.firstIndex(where: { $0.title == run }) else { return }
+        menu.performActionForItem(at: i)
+        let query = { (id: UUID) in self.store.item(id)?.tab.flatMap { URL(string: $0.url)?.query } ?? "-" }
+        let open = store.selectedTabID(window: windowID)
+        let panes = open.flatMap(store.splitContaining)?.children.map(query).joined(separator: "+") ?? "-"
+        CraLog.note("pane menu \(label) ran \(run): panes: \(panes) open: \(open.map(query) ?? "-")")
+    }
+
     /// `cra://debug?spaceMenu=<label>`: logs the menu a right-click on the open space's header
     /// opens, rows as menuReadout writes them (#413: no Set Profile in an incognito window).
     func testSpaceMenu(label: String) {
@@ -1261,14 +1284,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     // MARK: Split view
 
     /// Arc's "Add Split View" (⌃⇧=): a new empty pane opens after the focused
-    /// one, with the command bar ready to fill it.
-    func addSplitPane() {
-        guard let current = selectedTabID else { openCommandBar(.newTab); return }
+    /// one, with the command bar ready to fill it. A pane's Split View menu names the pane
+    /// (`nextTo`) and the side: Add Right/Bottom Split after it, Add Left/Top Split before.
+    func addSplitPane(nextTo pane: UUID? = nil, after: Bool = true) {
+        guard let current = pane ?? selectedTabID else { openCommandBar(.newTab); return }
         if store.paneTabIDs(for: current).count >= store.splitPaneLimit {
             showToast("Cannot Add New Pane")
             return
         }
-        guard store.addEmptyPane(nextTo: current) != nil else { return }
+        guard store.addEmptyPane(nextTo: current, after: after) != nil else { return }
         refresh()
         openCommandBar(.editURL)
     }

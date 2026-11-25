@@ -3320,6 +3320,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 main.testTabMenu(n, label: dict["label"] ?? "\(n)", run: dict["run"], split: true)
                 return
             }
+            // paneMenu=<n>[&label=][&run=<row>]: the n-th split pane's Split View menu, see testPaneMenu.
+            if let n = dict["paneMenu"].flatMap(Int.init) {
+                main.testPaneMenu(n, label: dict["label"] ?? "\(n)", run: dict["run"])
+                return
+            }
             // folderMenu=<n>[&label=][&run=<row>]: the n-th visible folder's menu (#662).
             if let n = dict["folderMenu"].flatMap(Int.init) {
                 main.testTabMenu(n, label: dict["label"] ?? "\(n)", run: dict["run"], folder: true)
