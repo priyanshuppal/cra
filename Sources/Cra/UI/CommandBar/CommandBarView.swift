@@ -40,6 +40,10 @@ final class CommandBarView: NSView {
     func debugDeletePoint(_ i: Int) -> NSPoint? { rows.indices.contains(i) ? rows[i].deletePoint : nil }
     /// cra://debug?commandBarRowPoint: the n-th row's centre in screen points.
     func debugRowPoint(_ i: Int) -> NSPoint? { rows.indices.contains(i) ? rows[i].centrePoint : nil }
+    /// Called as the bar's panel becomes key, so the first keys typed land in the field (CommandTextField.focusNow).
+    func focusField() { text.focusNow() }
+    /// cra://debug?commandBarType: what the field shows.
+    var debugFieldText: String { text.field.stringValue }
     private var syncQueued = false
     private var attached = false
     /// Arc's address panel from the sidebar (#663): a 45 pt input row, 13 pt type, titles only.

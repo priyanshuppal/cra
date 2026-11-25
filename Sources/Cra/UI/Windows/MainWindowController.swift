@@ -4729,6 +4729,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         CraLog.note("command bar key: sent")
     }
 
+    /// cra://debug?commandBarType=<chars>: ⌘T (or ⌘L with `edit`), then each character typed into the bar in the
+    /// same turn, as a quick typist's keys arrive before the bar has drawn. Logs the query and the field once the bar
+    /// has settled, so a key lost, or wiped by the text the bar opened with, shows.
+    func debugCommandBarType(_ chars: String, edit: Bool) {
+        openCommandBar(edit ? .editURL : .newTab)
+        for c in chars { debugCommandBarKey(characters: String(c), keyCode: 0, modifiers: []) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            CraLog.note("command bar query: \(self.commandBar.query) field: \(self.commandHost?.debugFieldText ?? "none")")
+        }
+    }
+
     /// `cra://debug?switcher` (`=all`: ⌃⌥Tab's, #467).
     func debugTabSwitcher(allSpaces: Bool = false, held: NSEvent.ModifierFlags = []) {
         let theme = focusedSpace.theme
@@ -5410,8 +5422,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         if commandPanel.parent == nil { window.addChildWindow(commandPanel, ordered: .above) }
         commandBarOpenedAt = Date()
         if !HitchMonitor.background { NSApp.activate(ignoringOtherApps: true) }
-        // Key immediately (typing never waits); CommandBarView fades itself in.
+        // Key immediately (typing never waits), the field with it; CommandBarView fades itself in.
         commandPanel.makeKeyAndOrderFront(nil)
+        commandHost.focusField()
         observeCommandBar()
     }
 
@@ -5459,6 +5472,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         sidebarUI.newTabPlaceholderActive = false
         if commandPanel.parent != nil { window?.removeChildWindow(commandPanel) }
         let panel = commandPanel!
+        // The field editor lets go of this session's text: kept, the next open's first key was typed onto it.
+        panel.makeFirstResponder(nil)
         // Let CommandBarView's fade-out (0.08 s) play before the panel goes away.
         panel.orderOut(nil)
         panel.level = .floating

@@ -1,0 +1,40 @@
+# A quick ⌘T g i t ⏎ lost its first keys: the bar's panel was key at once, but its field took the keys three
+# main-queue turns later. On the first open the keys went nowhere; on later ones the field editor still held the
+# last session's text, the key was typed onto it, and the text the bar opened with then wiped it.
+# cra://debug?commandBarType opens the bar and types into it in the same turn, as a quick typist's keys arrive.
+# Each case uses its own letters, since expect-log reads the whole log.
+requires screen
+env CRA_TEST_BACKGROUND=0
+budget rss=600 stalls50=8
+pace 0.5
+cra://open?url=${PAGE}?n=start
+expect-log loaded 127\.0\.0\.1
+wait 2
+cra://debug?activate=1
+wait 1
+# A real click on the page makes Cra the active app, so the bar's panel takes the keys.
+click page-top
+wait 1
+# The first open: the field has never held the keys.
+cra://debug?commandBarType=abc
+expect-log command bar query: abc field: abc$
+cra://dismiss
+wait 1
+# A later ⌘T, after a session that left text in the field.
+cra://commandbar?query=hello
+wait 1
+cra://dismiss
+wait 1
+cra://debug?commandBarType=xyz
+expect-log command bar query: xyz field: xyz$
+cra://dismiss
+wait 1
+# ⌘L: the typed keys replace the page's address the bar opens with.
+cra://commandbar?query=again
+wait 1
+cra://dismiss
+wait 1
+cra://debug?commandBarType=qrs&mode=edit
+expect-log command bar query: qrs field: qrs$
+reject-log command bar key: the bar doesn't hold the keys
+cra://dismiss
