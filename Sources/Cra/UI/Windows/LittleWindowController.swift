@@ -578,19 +578,21 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
         if commandPanel.parent === window { window.removeChildWindow(commandPanel); window.addChildWindow(commandPanel, ordered: .above) }
     }
 
-    /// Where the window lands: centred on the screen under the pointer, cascaded
-    /// off other little windows.
+    /// Where the window lands: centred on the screen under the pointer, cascaded off the Little
+    /// Window in front there (LittleWindowPlacement). Peeks, minimised windows and those on other
+    /// displays don't count.
     private func placeWindow() {
         guard let window else { return }
-        let vf = placementScreen.visibleFrame
-        var frame = window.frame
-        frame.size.width = min(frame.width, vf.width - 40)
-        frame.size.height = min(frame.height, vf.height - 40)
-        let n = CGFloat(app.littleWindows.count)
-        frame.origin = NSPoint(x: vf.midX - frame.width / 2 + n * 24, y: vf.midY - frame.height / 2 - n * 24)
-        frame.origin.x = min(max(vf.minX, frame.origin.x), vf.maxX - frame.width)
-        frame.origin.y = min(max(vf.minY, frame.origin.y), vf.maxY - frame.height)
-        window.setFrame(frame, display: false)
+        let screen = placementScreen
+        let shown = app.littleWindows.compactMap { l -> NSWindow? in
+            guard l !== self, !l.isPeek, let w = l.window, w.isVisible, !w.isMiniaturized, w.screen == screen else { return nil }
+            return w
+        }
+        // Front to back, as the window server stacks them.
+        let order = (NSWindow.windowNumbers(options: []) ?? []).map(\.intValue)
+        let others = shown.sorted { (order.firstIndex(of: $0.windowNumber) ?? .max) < (order.firstIndex(of: $1.windowNumber) ?? .max) }
+        window.setFrame(LittleWindowPlacement.frame(size: window.frame.size, visible: screen.visibleFrame,
+                                                    others: others.map(\.frame)), display: false)
     }
 
     /// The screen a new Little Window opens on: the one under the pointer (in a test instance, its display).

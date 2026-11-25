@@ -1956,6 +1956,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
                 return
             }
+            // littlePlace=<label>: how far the newest Little Window (Peeks left out) opened from the middle of its screen's
+            // visible area, in points right and down, and how many are open (LittleWindowPlacement).
+            if let label = dict["littlePlace"] {
+                guard let w = littleWindows.last(where: { !$0.isPeek })?.window, let screen = w.screen else {
+                    CraLog.note("little place \(label): none"); return
+                }
+                let v = screen.visibleFrame
+                CraLog.note("little place \(label): right=\(Int((w.frame.midX - v.midX).rounded())) down=\(Int((v.midY - w.frame.midY).rounded())) "
+                    + "windows=\(littleWindows.filter { !$0.isPeek }.count)")
+                return
+            }
             if dict["littleClose"] != nil {
                 guard let w = littleWindows.last(where: { !$0.isPeek })?.window, let button = w.standardWindowButton(.closeButton),
                       let top = NSScreen.screens.first?.frame.maxY else { CraLog.note("little close point: none"); return }
