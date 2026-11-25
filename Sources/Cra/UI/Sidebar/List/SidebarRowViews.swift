@@ -405,15 +405,19 @@ final class SidebarGlyphButton: NSView {
 }
 
 /// FaviconView for AppKit rows: the cached favicon, one-colour glyphs flipped to suit the fill,
-/// a globe while there is none.
+/// Arc's faint rounded square while there is none (FaviconPlaceholder).
 final class SidebarFaviconView: NSImageView {
     private var shown: (NSImage?, Bool, Bool)?
+    private let placeholder = CALayer()
 
     init(size: CGFloat = CraMetrics.favicon) {
         super.init(frame: NSRect(x: 0, y: 0, width: size, height: size))
         imageScaling = .scaleProportionallyUpOrDown
         wantsLayer = true
         layer?.cornerCurve = .continuous
+        placeholder.cornerCurve = .continuous
+        placeholder.isHidden = true
+        layer?.addSublayer(placeholder)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -421,11 +425,36 @@ final class SidebarFaviconView: NSImageView {
     override var mouseDownCanMoveWindow: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        placePlaceholder()
+    }
+
+    private func placePlaceholder() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        placeholder.frame = FaviconPlaceholder.frame(inSlot: bounds.width)
+        placeholder.cornerRadius = FaviconPlaceholder.cornerRadius(inSlot: bounds.width)
+        CATransaction.commit()
+    }
+
+    private func showPlaceholder(_ visible: Bool, dark: Bool = false) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        placeholder.isHidden = !visible
+        if visible {
+            placeholder.backgroundColor = NSColor(white: FaviconPlaceholder.white(dark: dark),
+                                                  alpha: FaviconPlaceholder.alpha(dark: dark)).cgColor
+        }
+        CATransaction.commit()
+    }
+
     func show(_ icon: NSImage?, flip: Bool, colors: SidebarColors) {
         if let s = shown, s.0 === icon, s.1 == flip, s.2 == colors.isDark { return }
         shown = (icon, flip, colors.isDark)
         let size = frame.width
         if let icon {
+            showPlaceholder(false)
             imageScaling = .scaleProportionallyUpOrDown
             if flip {
                 let t = icon.copy() as! NSImage
@@ -439,15 +468,18 @@ final class SidebarFaviconView: NSImageView {
             layer?.cornerRadius = size * 0.22
             layer?.masksToBounds = true
         } else {
-            imageScaling = .scaleNone
-            image = SidebarSymbols.image("globe", size: size * 0.8)
-            contentTintColor = colors.textTertiary
+            // Arc's missing favicon, new tabs' while they load included: a faint rounded square.
+            image = nil
+            contentTintColor = nil
             layer?.masksToBounds = false
+            placePlaceholder()
+            showPlaceholder(true, dark: colors.isDark)
         }
     }
 
     func showPluginMark(_ mark: NSImage, colors: SidebarColors, color: NSColor? = nil) {
         shown = nil
+        showPlaceholder(false)
         imageScaling = .scaleProportionallyUpOrDown
         image = mark
         contentTintColor = color ?? colors.monoGlyph

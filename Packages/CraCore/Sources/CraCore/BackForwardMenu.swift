@@ -79,7 +79,7 @@ public enum BackForwardMenu {
         public static let faviconX: CGFloat = 16
         public static let faviconSize: CGFloat = 16
         /// Arc's stand-in for a page with no favicon.
-        public static let placeholderSize: CGFloat = 14
+        public static let placeholderSize: CGFloat = FaviconPlaceholder.side
         public static let titleX: CGFloat = 40
         /// The title is cut with an ellipsis this far from the fill's right edge.
         public static let titleTrailing: CGFloat = 20
