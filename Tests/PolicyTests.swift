@@ -21,6 +21,7 @@ enum PolicyTests {
         featureFlags()
         liveScheduler()
         liveSchedulerToleranceIsTenPercent()
+        try bundleReplacementWatch()
         try webHandoff()
         try defaultBrowserPicker()
         try iPhoneDefaultBrowser()
@@ -234,6 +235,56 @@ enum PolicyTests {
         while fires < 2, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         repeating.cancel()
         expect(fires >= 2, "a repeating timer keeps firing")
+    }
+
+    /// Cra.app replaced or rewritten under a running Cra reaches the updater's check
+    /// (SoftwareUpdater.checkInstalledBundle) from the file system, not a 30-second poll:
+    /// scripts/build.sh's rsync, a copy written in place, and `brew upgrade --greedy`'s remove
+    /// and move (scenario app-replaced-while-running does that one in the real app).
+    @MainActor
+    private static func bundleReplacementWatch() throws {
+        let fm = FileManager.default
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cra-bundle-watch-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        func makeBundle(_ url: URL, build: String) throws {
+            try fm.createDirectory(at: url.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+            try Data("build \(build)".utf8).write(to: url.appendingPathComponent("Contents/Info.plist"))
+        }
+        let app = root.appendingPathComponent("Cra.app")
+        let plist = app.appendingPathComponent("Contents/Info.plist")
+        try makeBundle(app, build: "1")
+        var fires = 0
+        let watch = BundleReplacementWatch(bundle: app, clock: LiveScheduler(), settle: 0.05) { fires += 1 }
+        defer { watch.cancel() }
+        func waitForFire(_ what: String) {
+            let before = fires
+            let until = Date().addingTimeInterval(3)
+            while fires == before, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+            expect(fires > before, what)
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        expect(fires == 0, "nothing fires while the bundle stays as it is")
+
+        let staged = app.appendingPathComponent("Contents/.Info.plist.staged")
+        try Data("build 2".utf8).write(to: staged)
+        expect(rename(staged.path, plist.path) == 0, "the staged Info.plist is renamed into place")
+        waitForFire("a new Info.plist renamed over the old one (scripts/build.sh's rsync) fires the check")
+
+        let handle = try FileHandle(forWritingTo: plist)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(" more".utf8))
+        try handle.close()
+        waitForFire("Info.plist written in place fires the check")
+
+        let next = root.appendingPathComponent("next/Cra.app")
+        try makeBundle(next, build: "3")
+        try fm.removeItem(at: app)
+        waitForFire("the bundle removed fires the check")
+        try fm.moveItem(at: next, to: app)
+        waitForFire("replacing the bundle folder fires the check: a new Cra.app moved in where the old one was")
+
+        try Data("build 4".utf8).write(to: plist)
+        waitForFire("the watch follows the new bundle")
     }
 
     private static func featureFlags() {
