@@ -24,8 +24,17 @@ enum SafeStorage {
     /// Whether Chromium reads the Keychain item (false: --use-mock-keychain).
     private(set) static var usesKeychain = false
     /// The key Cra's profile is encrypted with, for the importer. nil when the Keychain
-    /// did not hand out the secret.
-    private(set) static var key: Data?
+    /// did not hand out the secret. On a profile already on the Keychain it is read the
+    /// first time something asks (SafeStoragePlan.readsSecretAtLaunch), not at every launch.
+    static var key: Data? { readsKeychainKey ? keychainKey : preparedKey }
+    private static var preparedKey: Data?
+    private static var readsKeychainKey = false
+    /// Read once, on whichever thread first asks (an import stages from a detached task).
+    private static let keychainKey: Data? = {
+        let key = keychainSecret().map(ChromiumCrypto.key(fromSecret:))
+        if key == nil { NSLog("Cra: no secret from the \(service) Keychain item") }
+        return key
+    }()
 
     private static let mockKey = ChromiumCrypto.key(fromSecret: "mock_password")
     /// Present once the profile is encrypted with the Keychain secret.
@@ -39,18 +48,19 @@ enum SafeStorage {
     static func prepare(profileIsFree: Bool) {
         if FileManager.default.fileExists(atPath: marker.path) {
             usesKeychain = true
-            key = keychainSecret().map(ChromiumCrypto.key(fromSecret:))
-            if key == nil { NSLog("Cra: no secret from the \(service) Keychain item") }
+            readsKeychainKey = true
+            // Staged rows are applied right after this, before Chromium starts.
+            if SafeStoragePlan.readsSecretAtLaunch(markerExists: true, pendingImport: CredentialImport.hasPending) { _ = keychainKey }
             return
         }
-        key = mockKey
+        preparedKey = mockKey
         guard profileIsFree, isSignedByTeam, frameworkUsesCraItem, let secret = keychainSecret() else { return }
         let newKey = ChromiumCrypto.key(fromSecret: secret)
         guard migrate(to: newKey) else { return }
         try? FileManager.default.createDirectory(at: AppPaths.chromiumCache, withIntermediateDirectories: true)
         guard FileManager.default.createFile(atPath: marker.path, contents: Data()) else { return }
         usesKeychain = true
-        key = newKey
+        preparedKey = newKey
     }
 
     /// The item's secret, made the way Chromium makes one (16 random bytes, base64) when
@@ -95,6 +105,8 @@ enum SafeStorage {
     /// A framework that still looks for "Chromium Safe Storage" would make its own secret
     /// and lose everything this migration re-encrypts.
     private static var frameworkUsesCraItem: Bool {
+        // The engine is built with engine/chromium/patches/keychain-service-name.patch.
+        guard SafeStoragePlan.scansFramework(isChromiumEngine: EngineFramework.isChromiumEngine) else { return true }
         guard let url = EngineFramework.binaryURL,
               let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return false }
         let name = Array("\(service)\0".utf8)
