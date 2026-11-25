@@ -235,6 +235,7 @@ final class PageSplitDrop: PageDropTarget {
                                                              : (r.maxY >= area.maxY ? "top" : r.minY <= area.minY ? "bottom" : "middle")
                 CraLog.note("dropSplit: proposed \(insert.orientation.rawValue) \(insert.index), region \(side) \(String(format: "%.2f", share))")
             }
+            CraLog.note("dropSplit: pill gap \(shell.dropPillGap.map(String.init) ?? "none")")
             shell.setDropPreview(nil, animated: false)
         case .replace(let index):
             let url = store.item(layout.ids[index])?.tab?.url.split(separator: "?").last.map(String.init) ?? "-"
