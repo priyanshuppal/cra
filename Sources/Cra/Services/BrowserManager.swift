@@ -24,8 +24,10 @@ final class TabRuntime {
     /// When Cra last ran the page's own `enterpictureinpicture` handler on leaving the tab (a
     /// Google Meet call opens its Document Picture in Picture window); coming back closes it.
     var sessionPictureInPictureAt: Date?
-    /// The tab switcher's thumbnail, taken while the page was last on screen.
-    var snapshot: NSImage?
+    /// The tab switcher's thumbnail, taken while the page was last on screen, as JPEG: about
+    /// 25 KB where the bitmap took 265 KB, kept for every page, slept ones too.
+    /// `BrowserManager.thumbnailImage` decodes it when a card shows it.
+    var snapshotData: Data?
     var snapshotWork: DispatchWorkItem?
     /// The page's back and forward list saved after it settles (PageHistory, #273).
     var historyWork: ScheduledWork?
@@ -600,10 +602,11 @@ final class BrowserManager: NSObject, @preconcurrency CraBrowserDelegate, WebKit
         let aspect = snapshotAspect(id) ?? thumb.width / thumb.height
         rt.browser.sendDevToolsMethod("Page.captureScreenshot", params: #"{"format":"jpeg","quality":80,"optimizeForSpeed":true}"#) { [weak self, weak rt] shot, _ in
             DispatchQueue.global(qos: .utility).async {
-                let image = shot.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
-                    .flatMap { $0["data"] as? String }.flatMap { Data(base64Encoded: $0) }.flatMap { Self.thumbnail(fromViewport: $0, aspect: aspect) }
+                let jpeg = shot.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+                    .flatMap { $0["data"] as? String }.flatMap { Data(base64Encoded: $0) }
+                    .flatMap { Self.thumbnail(fromViewport: $0, aspect: aspect) }.flatMap(Self.jpeg)
                 DispatchQueue.main.async {
-                    if let image, let rt, self?.runtimes[id] === rt { rt.snapshot = image }
+                    if let jpeg, let rt, self?.runtimes[id] === rt { rt.snapshotData = jpeg }
                     completion?()
                 }
             }
@@ -612,7 +615,7 @@ final class BrowserManager: NSObject, @preconcurrency CraBrowserDelegate, WebKit
 
     /// The top of the viewport at `aspect` (width to height), centred horizontally, at most
     /// twice the thumbnail's width and height in pixels.
-    nonisolated private static func thumbnail(fromViewport data: Data, aspect: CGFloat) -> NSImage? {
+    nonisolated private static func thumbnail(fromViewport data: Data, aspect: CGFloat) -> CGImage? {
         guard aspect > 0, let source = CGImageSourceCreateWithData(data as CFData, nil),
               let full = CGImageSourceCreateImageAtIndex(source, 0, nil), full.width > 0, full.height > 0 else { return nil }
         let thumb = TabSwitcherMetrics.thumbnail
@@ -625,7 +628,25 @@ final class BrowserManager: NSObject, @preconcurrency CraBrowserDelegate, WebKit
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
         ctx.interpolationQuality = .high
         ctx.draw(crop, in: CGRect(x: 0, y: 0, width: outW, height: outH))
-        return ctx.makeImage().map { NSImage(cgImage: $0, size: NSSize(width: outW, height: outH)) }
+        return ctx.makeImage()
+    }
+
+    /// The thumbnail as JPEG at 0.85, which a card at the switcher's size shows without visible loss.
+    nonisolated private static func jpeg(_ image: CGImage) -> Data? {
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        return CGImageDestinationFinalize(dest) ? out as Data : nil
+    }
+
+    /// A thumbnail's JPEG decoded for a card, one pixel per point as the bitmap was. Decoded now,
+    /// not when Core Animation first draws it: a 316×210 JPEG takes well under a millisecond,
+    /// so the switcher's five cards (and their panes) decode as it opens.
+    nonisolated static func thumbnailImage(_ data: Data?) -> NSImage? {
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+        else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 
     func browser(_ browser: CraBrowser, didCreateHostWindow window: NSWindow) {

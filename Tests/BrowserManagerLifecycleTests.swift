@@ -200,6 +200,7 @@ enum BrowserManagerLifecycleTests {
 
         embeddedPageHandoffCase()
         await snapshotCase()
+        await snapshotJPEGCase()
         loadingTabCase()
         themeDataCase()
         await sleepCase("an unchanged idle page sleeps", shouldSleep: true) { _, _ in }
@@ -1043,14 +1044,55 @@ enum BrowserManagerLifecycleTests {
             manager.captureSnapshot(id) { continuation.resume() }
             old.browser.reply(to: "Page.captureScreenshot", with: "{\"data\":\"\(pixels)\"}")
         }
-        expect(old.snapshot != nil, "a live page still receives its rendered thumbnail")
+        expect(old.snapshotData != nil, "a live page still receives its rendered thumbnail")
         await withCheckedContinuation { continuation in
             manager.captureSnapshot(id) { continuation.resume() }
             manager.unload(id)
             manager.show(id, focus: false)
             old.browser.reply(to: "Page.captureScreenshot", with: "{\"data\":\"\(pixels)\"}")
         }
-        expect(manager.runtime(for: id)?.snapshot == nil, "a late thumbnail cannot overwrite the replacement page's snapshot")
+        expect(manager.runtime(for: id)?.snapshotData == nil, "a late thumbnail cannot overwrite the replacement page's snapshot")
+        manager.closeAll()
+    }
+
+    /// The thumbnail is kept as JPEG, not a bitmap: a 1600×1000 viewport becomes a card at twice
+    /// the switcher's thumbnail in pixels, cropped to its shape from the top, in well under 64 KB
+    /// (the bitmap took 4 bytes a pixel, 512 KB at this harness's thumbnail size).
+    @MainActor
+    private static func snapshotJPEGCase() async {
+        let store = SidebarStore()
+        let manager = BrowserManager(store: store, favicons: FaviconCache(), container: NSView())
+        let id = store.createTab(url: "https://example.test/thumbnail-jpeg").id
+        manager.show(id, focus: false)
+        let rt = manager.runtime(for: id)!
+        // A page-like viewport: a gradient with a dark header band and some blocks of "text".
+        let (w, h) = (1600, 1000)
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                  colors: [CGColor(red: 1, green: 1, blue: 1, alpha: 1), CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1)] as CFArray,
+                                  locations: [0, 1])!
+        ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: w, y: h), options: [])
+        ctx.setFillColor(CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: h - 80, width: w, height: 80))
+        for row in 0..<30 { ctx.fill(CGRect(x: 100 + (row % 3) * 40, y: 100 + row * 25, width: 900 - (row % 5) * 90, height: 10)) }
+        let viewport = NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .jpeg, properties: [.compressionFactor: 0.8])!
+        await withCheckedContinuation { continuation in
+            manager.captureSnapshot(id) { continuation.resume() }
+            rt.browser.reply(to: "Page.captureScreenshot", with: "{\"data\":\"\(viewport.base64EncodedString())\"}")
+        }
+        let data = rt.snapshotData
+        expect(data.map { $0.count > 0 && $0.count < 64 * 1024 } == true, "the thumbnail is kept as a JPEG under 64 KB")
+        expect(data.map { $0.starts(with: [0xFF, 0xD8, 0xFF]) } == true, "the thumbnail's bytes are a JPEG")
+        let thumb = TabSwitcherMetrics.thumbnail
+        let aspect = thumb.width / thumb.height
+        let outW = Int(min(CGFloat(w), thumb.width * 2, thumb.height * 2 * aspect).rounded()), outH = Int((CGFloat(outW) / aspect).rounded())
+        let image = BrowserManager.thumbnailImage(data)
+        let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        expect(cg?.width == outW && cg?.height == outH, "the JPEG decodes at twice the thumbnail's size in pixels")
+        expect(image?.size == NSSize(width: outW, height: outH), "the decoded card is one pixel per point, as the bitmap was")
+        expect(BrowserManager.thumbnailImage(nil) == nil && BrowserManager.thumbnailImage(Data([1, 2, 3])) == nil,
+               "no thumbnail, or a broken one, shows the empty card")
         manager.closeAll()
     }
 
