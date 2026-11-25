@@ -297,8 +297,41 @@ final class CommandBarView: NSView {
             let otherSpace = s.spaceID.flatMap { $0 != c.focusedSpaceID && s.tabID != nil ? c.spaceName($0) : nil }
             r.show(s, icon: icon, selected: i == c.selectedIndex, highlight: highlight, otherSpace: otherSpace,
                    dark: dark, compact: compact, deletable: c.canDelete(row: i))
+            r.speak(CommandBarSpeech.text(title: s.title, subtitle: CommandBarRowView.spokenDetail(s),
+                                          trailing: CommandBarRowView.spokenTrailing(s, otherSpace: otherSpace), index: i, count: items.count),
+                    selected: i == c.selectedIndex)
         }
+        announce(items: items)
         needsLayout = true
+    }
+
+    /// What the bar showed when it last spoke, and that line; nil while the bar is closed.
+    private var spokenShown: CommandBarSpeech.Shown?
+    private var lastAnnouncement: String?
+
+    /// The field keeps the focus, so VoiceOver hears the rows only through an announcement: the selected row's
+    /// label or the completion, when CraCore CommandBarSpeech says one of them changed.
+    private func announce(items: [Suggestion]) {
+        guard controller.isOpen, items.indices.contains(controller.selectedIndex) else {
+            if !controller.isOpen { spokenShown = nil; lastAnnouncement = nil }
+            return
+        }
+        let i = controller.selectedIndex
+        let now = CommandBarSpeech.Shown(selectedIndex: i, selectedID: items[i].id, topID: items.first?.id,
+                                         completion: controller.result.inlineCompletion)
+        let line = CommandBarSpeech.announcement(from: spokenShown, to: now, row: rows[i].accessibilityLabel())
+        spokenShown = now
+        guard let line else { return }
+        lastAnnouncement = line
+        NSAccessibility.post(element: text.field, notification: .announcementRequested,
+                             userInfo: [.announcement: line, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+
+    /// cra://debug?commandBarAX: "label=<label> selected=<true|false> announced=<the last announcement>", or "none".
+    func debugRowAccessibility(_ i: Int) -> String {
+        guard rows.indices.contains(i), !rows[i].isHidden else { return "none" }
+        let r = rows[i]
+        return "label=\(r.accessibilityLabel() ?? "") selected=\(r.isAccessibilitySelected()) announced=\(lastAnnouncement ?? "none")"
     }
 
     override func layout() {
