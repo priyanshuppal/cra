@@ -1,0 +1,38 @@
+# Escape in an address edited in place puts the address back and gives the keys back to the page, as Escape in the
+# command bar does: the sidebar's with Settings ▸ Tabs "Edit the address in the sidebar" (#344), and the developer
+# bar's (GitHub #42). The field had resigned to the window, so Space, the arrows and Page Down did nothing until the
+# page was clicked. Each check has its own label, since expect-log reads the whole log.
+requires screen
+env CRA_TEST_BACKGROUND=0
+budget rss=600 stalls50=8
+pace 0.5
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false, "editAddressInPlace": true}
+cra://open?url=${PAGE}?n=local
+expect-log loaded 127\.0\.0\.1
+wait 2
+cra://debug?activate=1
+wait 1
+# A real click on the page makes Cra the active app with the page holding the keys.
+click page-top
+wait 1
+cra://debug?cdp=Runtime.evaluate&params={"expression":"'before:'+document.hasFocus()"}
+expect-log Cra cdp Runtime\.evaluate .*"value":"before:true"
+# The sidebar's address, edited in place, then Escape.
+cra://debug?urlFieldEdit=click
+expect-log url field click: editing .*n=local, command bar closed
+cra://debug?urlFieldEdit=escape:${PAGE}?n=ignored
+expect-log url field escape: done
+wait 1
+cra://debug?cdp=Runtime.evaluate&params={"expression":"'sidebar:'+document.hasFocus()+' '+location.search"}
+expect-log Cra cdp Runtime\.evaluate .*"value":"sidebar:true \?n=local"
+# The developer bar's address (Developer Mode on a local page), edited in place, then Escape.
+cra://action/toggleDeveloperMode
+wait 1
+cra://debug?urlFieldEdit=toolbar-click
+expect-log url field toolbar-click: editing
+cra://debug?urlFieldEdit=toolbar-escape:${PAGE}?n=ignored
+expect-log url field toolbar-escape: done
+wait 1
+cra://debug?cdp=Runtime.evaluate&params={"expression":"'toolbar:'+document.hasFocus()+' '+location.search"}
+expect-log Cra cdp Runtime\.evaluate .*"value":"toolbar:true \?n=local"
+cra://action/toggleDeveloperMode

@@ -113,6 +113,7 @@ final class PaneToolbarView: NSView {
         urlButton.onCopy = { [weak self] in self?.copyURL() }
         urlButton.menuProvider = { [weak self] in self?.addressMenu() }
         urlButton.onCommit = { [weak self] in self?.actions.loadTyped($0) }
+        urlButton.onCancel = { [weak self] in self?.actions.addressEditCancelled() }
         urlButton.onEditingChange = { [weak self] in self?.editVeil.isHidden = !$0 }
         editVeil.wantsLayer = true
         editVeil.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.09).cgColor
@@ -252,6 +253,17 @@ final class PaneToolbarView: NSView {
             m.stripes = true
         }
         return m
+    }
+
+    /// Scenarios: "click" presses the address as a click does ("editing" when the developer bar edits it in place),
+    /// "escape:<text>" types into the field being edited, then presses Escape ("done", or "not editing").
+    func debugURLEdit(_ step: String) -> String {
+        if step == "click" {
+            editURL()
+            return urlButton.isEditing ? "editing" : "not editing"
+        }
+        let text = String(step.drop(while: { $0 != ":" }).dropFirst())
+        return urlButton.debugType(text, commit: false) ? "done" : "not editing"
     }
 
     /// Scenarios (#694): "hover=black 5% url=black 5%", the fills under the pointer on this bar.
@@ -890,6 +902,8 @@ final class ToolbarURLButton: NSView, NSTextFieldDelegate {
     var menuProvider: (() -> NSMenu?)?
     /// Developer mode's in-place address field: the text Return submits, and editing starting/ending.
     var onCommit: (String) -> Void = { _ in }
+    /// Escape in the field being edited, once the URL is back (not an edit another field or a click ended).
+    var onCancel: () -> Void = {}
     var onEditingChange: (Bool) -> Void = { _ in }
     var selection = NSColor.selectedTextBackgroundColor
     private var field: NSTextField?
@@ -1125,13 +1139,28 @@ final class ToolbarURLButton: NSView, NSTextFieldDelegate {
         if commit { onCommit(text) }
     }
 
+    /// Escape: the URL goes back, and the keys to the page that lost them to the field.
+    private func cancelEditing() {
+        guard field != nil else { return }
+        endEditing(commit: false)
+        onCancel()
+    }
+
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
         case #selector(NSResponder.insertNewline(_:)): endEditing(commit: true)
         // A field editor reads Esc as complete: (word completion), ⌘. as cancelOperation:.
-        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): endEditing(commit: false)
+        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): cancelEditing()
         default: return false
         }
+        return true
+    }
+
+    /// Scenario hook: type into the field being edited, then Return (or Escape).
+    func debugType(_ text: String, commit: Bool) -> Bool {
+        guard let f = field else { return false }
+        f.stringValue = text
+        if commit { endEditing(commit: true) } else { cancelEditing() }
         return true
     }
 

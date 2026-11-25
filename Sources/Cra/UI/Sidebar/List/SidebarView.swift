@@ -602,6 +602,7 @@ final class SidebarTopBarView: NSView {
         super.init(frame: .zero)
         pill.actions = actions
         pill.onCommit = { [weak actions] in actions?.commitAddress($0) }
+        pill.onCancel = { [weak actions] in actions?.addressEditCancelled() }
         addSubview(pill)
         sync()
     }
@@ -916,6 +917,9 @@ final class SidebarURLPill: NSView, NSTextFieldDelegate {
     private var resignObserver: NSObjectProtocol?
     /// Return in the field, with what was typed.
     var onCommit: (String) -> Void = { _ in }
+    /// Escape in the field, once the address is back. Only Escape: an edit ended by the command bar, another field
+    /// or a click on the page leaves the keys where they went.
+    var onCancel: () -> Void = {}
     /// Scenarios (cra://debug?hover=SidebarURLPill): the pill as the pointer leaves it hovered (#293).
     func debugHover() { hovering = true }
     private var model: (pinned: [(String, String, NSImage?)], active: Bool)?
@@ -1152,11 +1156,19 @@ final class SidebarURLPill: NSView, NSTextFieldDelegate {
         if commit { onCommit(text) }
     }
 
+    /// Escape: the address goes back, and the keys to the page, which lost them to the field. Without this the
+    /// keys stayed with the window, and Space, the arrows and Page Down did nothing until the page was clicked.
+    private func cancelEditing() {
+        guard field != nil else { return }
+        endEditing(commit: false)
+        onCancel()
+    }
+
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
         case #selector(NSResponder.insertNewline(_:)): endEditing(commit: true)
         // A field editor reads Esc as complete: (word completion), ⌘. as cancelOperation:.
-        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): endEditing(commit: false)
+        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): cancelEditing()
         default: return false
         }
         return true
@@ -1168,7 +1180,7 @@ final class SidebarURLPill: NSView, NSTextFieldDelegate {
     func debugType(_ text: String, commit: Bool) -> Bool {
         guard let f = field else { return false }
         f.stringValue = text
-        endEditing(commit: commit)
+        if commit { endEditing(commit: true) } else { cancelEditing() }
         return true
     }
 

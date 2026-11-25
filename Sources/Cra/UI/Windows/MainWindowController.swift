@@ -521,6 +521,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
             case .newTab(let url): self.store.createTab(url: url, window: self.windowID)
             }
         }
+        sidebarActions.addressEditCancelled = { [weak self] in self?.focusPageAfterAddressEdit() }
         sidebarActions.openTyped = { [weak self] typed in
             guard let self else { return }
             let t = typed.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4935,7 +4936,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     /// click: editing <text>", "not editing" when it opened the command bar), "state" what it shows
     /// now; "type:<text>" or
     /// "escape:<text>" types into the field being edited, then presses Return or Escape.
+    /// "toolbar-click" and "toolbar-escape:<text>" do the same on the focused card's toolbar address (the developer
+    /// bar's is edited in place).
     func debugURLFieldEdit(_ step: String) {
+        if step.hasPrefix("toolbar-") {
+            let toolbar = shell.focusedCard?.toolbarHost as? PaneToolbarView
+            let name = step.prefix(while: { $0 != ":" })
+            CraLog.note("url field \(name): " + (toolbar?.debugURLEdit(String(step.dropFirst("toolbar-".count))) ?? "no toolbar"))
+            return
+        }
         let sidebar = shell.sidebarHost as? SidebarView
         if step == "click" {
             CraLog.note("url field click: " + (sidebar?.debugURLFieldClick() ?? "none") + ", command bar " + (commandBar.isOpen ? "open" : "closed")
@@ -5490,6 +5499,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         }
         window?.makeKeyAndOrderFront(nil)
         currentBrowser?.setFocused(true)
+    }
+
+    /// Escape in the address edited in place (the sidebar's, #344, or the developer bar's): the field gave up the
+    /// keys to the window, so they go back to the page, as Escape in the command bar gives them back. A Peek over
+    /// its tab first (#379); an embedded page needs its view made first responder again, not only Chromium told.
+    private func focusPageAfterAddressEdit() {
+        if let peek = peeks.first(where: { !$0.isParked && $0.window?.isVisible == true }) {
+            peek.window?.makeKeyAndOrderFront(nil)
+            peek.focusPage()
+            return
+        }
+        if let id = selectedTabID, browsers.runtime(for: id)?.pageViews.last?.window === window {
+            focusEmbeddedPage(id)
+        } else {
+            currentBrowser?.setFocused(true)
+        }
     }
 
     private func handleCommit(_ s: Suggestion?, typed: String, mode: CommandBarMode) {
