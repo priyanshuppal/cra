@@ -97,6 +97,10 @@ enum StoreTests {
         mcpExcludesPrivateTabs()
         pinnedURL()
         tabFavicons()
+        storingSameIconAgainNotifiesNoOne()
+        newIconNotifiesOnlyItsKey()
+        prefetchDecodesIconsAndTheirTone()
+        trimmedIconsReadTheirFileAgain()
         folderSymbols()
         moveTabToSpace()
         moveFolderToSpace()
@@ -2774,6 +2778,110 @@ enum StoreTests {
         store.updateTab(rds.id, url: "https://example.org/")
         expect(store.item(rds.id)?.tab?.faviconKey == "example.org", "another host shows that site's icon")
         expect(store.item(eks.id)?.tab?.faviconKey == eksIcon, "and the other tab never changes")
+    }
+
+    private final class Told: @unchecked Sendable { var on = false }
+
+    /// What reads `key`'s icon, told when it changes.
+    @MainActor
+    private static func watching(_ cache: FaviconCache, _ key: String) -> Told {
+        let told = Told()
+        withObservationTracking { _ = cache.image(forKey: key) } onChange: { told.on = true }
+        return told
+    }
+
+    private static func pageIcon(_ name: String) -> NSImage {
+        NSImage(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Pages/\(name)"))!
+    }
+
+    /// A page reports its icon on every load, and BrowserManager stores it under the site's key and the
+    /// tab's: the same icon again tells no one, so no sidebar list is rebuilt for it.
+    @MainActor
+    private static func storingSameIconAgainNotifiesNoOne() {
+        let cache = FaviconCache()
+        let key = FaviconKey.key(site: "same-icon.example", tabID: UUID())
+        let first = pageIcon("icon-orange.png")
+        cache.store(first, forKey: key)
+        let told = watching(cache, key)
+        cache.store(pageIcon("icon-orange.png"), forKey: key)
+        expect(!told.on, "the same icon stored again, as a new image, tells no one")
+        expect(cache.image(forKey: key) === first, "and the first image stays")
+        cache.store(pageIcon("icon-blue.png"), forKey: key)
+        expect(told.on, "a different icon under the key tells what showed it")
+    }
+
+    /// A new icon tells only what read its key (or the site's a tab's key falls back to), not every
+    /// list that shows some icon.
+    @MainActor
+    private static func newIconNotifiesOnlyItsKey() {
+        let cache = FaviconCache()
+        let mine = FaviconKey.key(site: "mine.example", tabID: UUID())
+        let other = "other.example"
+        cache.store(pageIcon("icon-orange.png"), forKey: other)
+        let toldMine = watching(cache, mine), toldOther = watching(cache, other)
+        let toldSite = Told()
+        withObservationTracking { cache.observe(FaviconKey.key(site: "site.example", tabID: UUID())) } onChange: { toldSite.on = true }
+        cache.store(pageIcon("icon-blue.png"), forKey: mine)
+        expect(toldMine.on, "a tab's new icon tells what showed that tab's icon")
+        expect(!toldOther.on && !toldSite.on, "and nothing that showed another key")
+        cache.store(pageIcon("icon-blue.png"), forKey: "site.example")
+        expect(toldSite.on, "a site's new icon tells a row whose tab has no icon of its own yet")
+    }
+
+    /// A 32 px icon file under `key`: a 10 px square of `color` on a transparent background, as GitHub's mark.
+    private static func writeGlyph(_ color: NSColor, forKey key: String) {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32, bitsPerSample: 8, samplesPerPixel: 4,
+                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        color.setFill()
+        NSRect(x: 11, y: 11, width: 10, height: 10).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])?.write(to: AppPaths.favicons.appendingPathComponent(FaviconCache.fileName(key)))
+    }
+
+    /// A space's list asks for its rows' icons before showing them: they are read, decoded and their glyph
+    /// tone worked out off the main thread, and land together, telling the rows that showed them missing.
+    @MainActor
+    private static func prefetchDecodesIconsAndTheirTone() {
+        let dark = FaviconKey.key(site: "dark-glyph.example", tabID: UUID())
+        let light = FaviconKey.key(site: "light-glyph.example", tabID: UUID())
+        writeGlyph(.black, forKey: dark)
+        writeGlyph(.white, forKey: light)
+        let cache = FaviconCache()
+        var landed = false
+        cache.prefetch([dark, light, "no-file.example"]) { landed = true }
+        expect(cache.isLoading(dark) && cache.image(forKey: dark) == nil, "while it is read the row shows no icon, and fetches none")
+        let told = watching(cache, dark)
+        let deadline = Date().addingTimeInterval(10)
+        while !landed && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        expect(landed && told.on && !cache.isLoading(dark), "the icons land together and the row hears about it")
+        expect(cache.image(forKey: dark)?.size == NSSize(width: 32, height: 32), "at the size the file gives it")
+        expect(cache.knowsGlyphTone(forKey: dark) && cache.knowsGlyphTone(forKey: light), "with the glyph tone already worked out")
+        expect(cache.glyphIsDark(forKey: dark) == true && cache.glyphIsDark(forKey: light) == false, "dark for a black mark, light for a white one")
+        expect(cache.image(forKey: "no-file.example") == nil && !cache.isLoading("no-file.example"), "a key with no file lands as missing")
+        var again = false
+        cache.prefetch([dark]) { again = true }
+        expect(again, "an icon already in memory isn't read again")
+    }
+
+    /// Short of memory, the icons no row shows go (the command bar's history keeps every host it showed),
+    /// and come back from their files when shown again.
+    @MainActor
+    private static func trimmedIconsReadTheirFileAgain() {
+        let kept = FaviconKey.key(site: "kept-icon.example", tabID: UUID())
+        let dropped = "history-only.example"
+        writeGlyph(.black, forKey: kept)
+        writeGlyph(.black, forKey: dropped)
+        let cache = FaviconCache()
+        let keptImage = cache.image(forKey: kept), droppedImage = cache.image(forKey: dropped)
+        expect(keptImage != nil && droppedImage != nil && cache.glyphIsDark(forKey: dropped) == true, "both icons read from disk")
+        cache.trimForMemoryPressure(keeping: [kept])
+        expect(cache.image(forKey: kept) === keptImage, "an icon a row shows stays in memory")
+        expect(!cache.knowsGlyphTone(forKey: dropped), "a dropped icon's tone goes with it")
+        let again = cache.image(forKey: dropped)
+        expect(again != nil && again !== droppedImage, "a dropped icon reads its file again when next shown")
+        expect(cache.glyphIsDark(forKey: dropped) == true, "and its tone is worked out again")
     }
 
     // promise: #54

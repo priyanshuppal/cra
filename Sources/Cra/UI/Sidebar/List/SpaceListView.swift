@@ -257,7 +257,16 @@ final class SpaceListView: NSView, NSDraggingSource {
             Task { @MainActor in self?.scheduleSync() }
         }
         let t1 = DispatchTime.now().uptimeNanoseconds
-        if let built { apply(built) }
+        if let built {
+            // A space paged out of sight reads its rows' icons off the main thread before they are shown. The
+            // window's own space (also while the list is built, before it is in the window) shows the icons its
+            // rows need at once, as before, with no frame of missing icons, and reads the rest (the rows past
+            // the fold) the same way.
+            let shown = store.focusedSpaceID(window: ui.windowID) == spaceID
+            if !shown { favicons.prefetch(built.iconKeys) }
+            apply(built)
+            if shown { favicons.prefetch(built.iconKeys) }
+        }
         let t2 = DispatchTime.now().uptimeNanoseconds
         Self.stats.add(rows: built?.rows.count ?? 0, build: Double(t1 - t0) / 1e6, apply: Double(t2 - t1) / 1e6, models: Self.modelsBuilt)
         Self.modelsBuilt = 0
@@ -288,6 +297,8 @@ final class SpaceListView: NSView, NSDraggingSource {
         var highlightPinned: Bool
         var highlightToday: Bool
         var line: SidebarListDrop.Line?
+        /// The icon keys the rows show, for FaviconCache.prefetch.
+        var iconKeys: [String]
         /// Builds a tab's, folder's or split's model from what this build read (#618).
         var model: @MainActor (Row) -> Content?
     }
@@ -316,7 +327,6 @@ final class SpaceListView: NSView, NSDraggingSource {
         let incognito = store.isIncognito(space: spaceID)
         // What the models read, read here so a change still rebuilds the list: the models themselves are built
         // only for rows that get a view, outside this observation (#618).
-        _ = favicons.images
         _ = store.settings
         let peekBadges = ui.peekBadges
         _ = LiveFolderPluginStore.shared.entries
@@ -340,6 +350,17 @@ final class SpaceListView: NSView, NSDraggingSource {
             default: break
             }
             return d
+        }
+
+        // The icons a row's model shows, key by key: a page reporting its icon rebuilds only the lists that show it.
+        var iconKeys: [String] = []
+        func watchIcons(_ item: SidebarItem, pinned: Bool) {
+            guard let tab = item.tab else { return }
+            for key in [tab.iconKey, pinned ? tab.customIconKey ?? FaviconKey.key(for: tab.savedURL) : nil, peekBadges[item.id]?.iconKey] {
+                guard let key else { continue }
+                favicons.observe(key)
+                iconKeys.append(key)
+            }
         }
 
         func add(_ item: SidebarItem, depth: Int, pinned: Bool, parent: UUID, index: Int, peeked: Bool = false) {
@@ -379,12 +400,15 @@ final class SpaceListView: NSView, NSDraggingSource {
                 row.pinned = pinned
                 row.peeked = peeked
                 row.selected = item.id == openTab
+                watchIcons(item, pinned: pinned)
                 out.append(row)
             } else if item.isSplit {
                 row.kind = .split
                 row.pinned = pinned
                 // Its tabs are read here, so a change to one rebuilds the list.
-                row.selected = store.children(of: item.id).contains { $0.isTab && $0.id == openTab }
+                let panes = store.children(of: item.id)
+                row.selected = panes.contains { $0.isTab && $0.id == openTab }
+                for pane in panes { watchIcons(pane, pinned: false) }
                 out.append(row)
             }
         }
@@ -501,7 +525,7 @@ final class SpaceListView: NSView, NSDraggingSource {
         if !atTop && showsNewTab { out.append(Row(key: .newTab, content: .newTab(active: placeholder))) }
         return Built(rows: out, pinnedCount: pinnedCount, palette: palette,
                      highlightPinned: section == .pinned && !pinnedItems.isEmpty, highlightToday: section == .today,
-                     line: drop?.line, model: model)
+                     line: drop?.line, iconKeys: iconKeys, model: model)
     }
 
     /// A line inside the open live folder when there are no pull requests to show, or GitHub
