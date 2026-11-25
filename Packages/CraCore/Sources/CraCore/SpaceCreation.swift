@@ -278,9 +278,10 @@ public enum SpaceCreationSwipe {
     }
 
     /// Whether the page leaves when the fingers lift: past half way, or flicked out. `velocity` is
-    /// in sidebar widths a second, rightwards; a flick is what turns a page between spaces (0.8).
+    /// in sidebar widths a second, rightwards; a flick is what turns a page between spaces
+    /// (`LibrarySwipe.flickSpeed`).
     public static func leaves(pull: CGFloat, velocity: CGFloat) -> Bool {
-        if abs(velocity) > 0.8 { return velocity > 0 && pull > 0 }
+        if abs(velocity) > LibrarySwipe.flickSpeed { return velocity > 0 && pull > 0 }
         return pull > 0.5
     }
 }

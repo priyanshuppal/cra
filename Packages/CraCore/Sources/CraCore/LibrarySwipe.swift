@@ -18,8 +18,22 @@ public enum LibrarySwipe {
     /// The spring's response (SwiftUI's, a CASpringAnimation's perceptual duration): the window tint settles on it
     /// too, with the strip (it stayed on Dia's 0.4 s and trailed the sidebar after #613's first fix).
     public static let response: TimeInterval = 0.205
-    /// A release faster than this (pages per second) goes its way whatever the position.
-    public static let flickSpeed: CGFloat = 0.8
+    /// A release faster than this (pages per second) goes its way whatever the position. Tuned at 0.8 on the old
+    /// reading, which ran `sixtyHertzBias` fast on a 60 Hz trackpad.
+    public static let flickSpeed: CGFloat = 0.8 / sixtyHertzBias
+
+    /// How far the release velocity used to read over the true speed on a 60 Hz trackpad, the one the flick
+    /// thresholds (0.8) and the settles' starting speed were tuned on. The old reading summed every sample in the
+    /// last `velocityWindow` and divided by the time from the first to the last, but the first sample's travel came
+    /// before its own timestamp: N samples' travel over N − 1 intervals. At 60 Hz the 80 ms window holds 5 samples
+    /// (0, 16.7 … 66.7 ms back), so it read 5/4 of the speed; at 120 Hz 10 samples (0 … 75 ms) read 10/9, and a
+    /// borderline flick on a ProMotion Mac snapped back. `velocity` now reads the true speed at any rate; the
+    /// thresholds are divided by this and the settles' starting speed multiplied by it, so a 60 Hz swipe decides and
+    /// settles as before.
+    public static let sixtyHertzBias: CGFloat = 5.0 / 4.0
+
+    /// How far back the release velocity looks: the swipes keep their last 80 ms of samples.
+    public static let velocityWindow: TimeInterval = 0.08
 
     /// The reveal for `travel` points of finger movement (+ toward the Library) from `start`, the
     /// Library being `width` wide; nil once it is past the space on a swipe that counts from the
@@ -129,10 +143,12 @@ public enum LibrarySwipe {
         abs(velocity) > flickSpeed ? (velocity > 0 ? 1 : 0) : (r > 0.5 ? 1 : 0)
     }
 
-    /// Release velocity in reveals per second from the last moments' `(time, delta)` samples.
+    /// Release velocity in reveals (pages) per second from the last moments' `(time, delta)` samples: the travel
+    /// after the first sample over the time from it to the last, since the first sample's own travel came before its
+    /// timestamp. A lone sample, or samples too close together to time, read 0. The same at any trackpad rate.
     public static func velocity(samples: [(time: TimeInterval, dx: CGFloat)], width: CGFloat) -> CGFloat {
         guard let first = samples.first, let last = samples.last, last.time - first.time > 0.004 else { return 0 }
-        return samples.reduce(0) { $0 + $1.dx } / CGFloat(last.time - first.time) / max(1, width)
+        return samples.dropFirst().reduce(0) { $0 + $1.dx } / CGFloat(last.time - first.time) / max(1, width)
     }
 
     /// The settle `t` seconds after release from reveal `r` moving at `velocity` reveals per second.
