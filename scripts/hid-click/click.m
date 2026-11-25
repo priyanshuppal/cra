@@ -1,7 +1,8 @@
 // click: a real left click, through the window server as a mouse sends it, for scenarios about what a click on
 // an app that isn't in front does (#659: Cra comes forward for it before AppKit makes it active).
 //   click <pid> <x> <y> [n]   top-left screen points, n clicks (2 a double click, as a mouse sends it: click states 1
-//                         then 2 at the system's pace; 0 only moves the pointer there, #743); clicks only when the window in front at that point is <pid>'s
+//                         then 2 at the system's pace; 0 only moves the pointer there, #743; `drag` presses there and
+//                         drags 40 pt right before letting go, #754); clicks only when the window in front at that point is <pid>'s
 //                         (the Dock's and Notification Centre's full-screen layers aside), so it never lands in
 //                         another app; prints "clicked <x> <y>", or what is there instead and exits 3
 // Built by scripts/scenario.sh's `click` lines.
@@ -34,12 +35,36 @@ int main(int argc, const char* argv[]) {
     pid_t pid;
     NSString* owner = OwnerAt(p, &pid);
     if (pid != want) { printf("not clicked: %s (pid %d) is in front at %.0f %.0f\n", owner.UTF8String, pid, p.x, p.y); return 3; }
-    int clicks = argc > 4 ? MAX(0, atoi(argv[4])) : 1;
+    BOOL drag = argc > 4 && strcmp(argv[4], "drag") == 0;
+    int clicks = drag ? 0 : argc > 4 ? MAX(0, atoi(argv[4])) : 1;
     CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
     CGEventRef move = CGEventCreateMouseEvent(src, kCGEventMouseMoved, p, kCGMouseButtonLeft);
     CGEventPost(kCGHIDEventTap, move);
     CFRelease(move);
     [NSThread sleepForTimeInterval:0.15];
+    if (drag) {
+      // One press, a hand's drag in steps, and the release where it ended.
+      CGPoint at = p;
+      CGEventRef down = CGEventCreateMouseEvent(src, kCGEventLeftMouseDown, at, kCGMouseButtonLeft);
+      CGEventSetIntegerValueField(down, kCGMouseEventClickState, 1);
+      CGEventPost(kCGHIDEventTap, down);
+      CFRelease(down);
+      for (int i = 1; i <= 8; i++) {
+        [NSThread sleepForTimeInterval:0.03];
+        at = CGPointMake(p.x + 5 * i, p.y);
+        CGEventRef e = CGEventCreateMouseEvent(src, kCGEventLeftMouseDragged, at, kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap, e);
+        CFRelease(e);
+      }
+      [NSThread sleepForTimeInterval:0.08];
+      CGEventRef up = CGEventCreateMouseEvent(src, kCGEventLeftMouseUp, at, kCGMouseButtonLeft);
+      CGEventSetIntegerValueField(up, kCGMouseEventClickState, 1);
+      CGEventPost(kCGHIDEventTap, up);
+      CFRelease(up);
+      CFRelease(src);
+      printf("dragged %.0f %.0f to %.0f %.0f\n", p.x, p.y, at.x, at.y);
+      return 0;
+    }
     for (int n = 1; n <= clicks; n++) {
       CGEventType types[] = {kCGEventLeftMouseDown, kCGEventLeftMouseUp};
       for (int i = 0; i < 2; i++) {

@@ -191,7 +191,8 @@ private struct ColorPad: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .contentShape(Rectangle())
                 // Arc: pressing anywhere on the pad brings the main colour there, and it follows the drag.
-                .gesture(DragGesture(minimumDistance: 0).onChanged { g in place(handle: 0, at: g.location, centre: centre) })
+                .gesture(DragGesture(minimumDistance: 0).onChanged { g in place(handle: 0, at: g.location, centre: centre) }
+                    .onEnded { _ in logDrag() })
                 if pad.key.isEmpty {
                     Text("Tap to pick a color for this space")
                         .font(.system(size: 13, weight: .semibold))
@@ -223,7 +224,7 @@ private struct ColorPad: View {
                                 draggingKnob = i
                                 place(handle: i, at: g.location, centre: centre)
                             }
-                            .onEnded { _ in draggingKnob = nil })
+                            .onEnded { _ in draggingKnob = nil; logDrag() })
                 }
                 VStack {
                     AppearanceToggles(appearance: $pad.appearance).padding(.top, 24)
@@ -238,7 +239,14 @@ private struct ColorPad: View {
                     .padding(.bottom, 20)
                 }
             }
+            // Where a scenario's real pointer presses (cra://debug?themePad=point, #754).
+            .onAppear { SpaceStyleTick.padFrame = geo.frame(in: .global) }
         }
+    }
+
+    /// A press or drag on the pad, or on a knob, let go: what the pad holds now (#754).
+    private func logDrag() {
+        CraLog.note("theme editor pad dragged: key=\(pad.key.joined(separator: ","))")
     }
 
     private func padButton(_ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -355,6 +363,8 @@ enum SpaceStyleTick {
     /// Swatches, + and − a scenario has pressed, numbering its "theme editor pad" lines.
     static var padPresses = 0
     static let debugSet = Notification.Name("CraDebugThemeEditorSet")
+    /// The colour pad in its window, top-left points, for cra://debug?themePad=point (#754).
+    static var padFrame: CGRect?
 
     static func play() {
         count += 1
