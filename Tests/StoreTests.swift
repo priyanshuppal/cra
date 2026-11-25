@@ -3960,6 +3960,8 @@ enum StoreTests {
         syncGoesOnWithoutAsking()
         syncWritesSoonAfterAChange()
         syncLooksWithoutEncodingWhatDidNotChange()
+        syncSwitchesTabsWithoutEncoding()
+        syncWritesARenameOnceInTheSameBytes()
         syncPutsAMixedBundleRight()
         syncPutsAFileThatNeverArrivesRight()
         syncLeavesAMixToItsWriterOnANewMac()
@@ -4228,6 +4230,73 @@ enum StoreTests {
         let settled = sync.localEncodes
         sync.poll()
         expect(sync.localEncodes == settled, "idle again")
+        sync.disable()
+    }
+
+    /// A tab switch moves only last-active times, which a write soon leaves for the 30-second look,
+    /// yet the check 3 s after it encoded the whole sidebar on the main thread to find that out
+    /// (about 30 ms at 2,000 tabs). It now compares values and encodes nothing.
+    @MainActor
+    private static func syncSwitchesTabsWithoutEncoding() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("cra-sync-switch-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = ManualScheduler()
+        let a = SidebarStore(clock: clock)
+        let tabs = (0..<5).map { a.createTab(url: "https://example.com/switch-\($0)").id }
+        let sync = SettingsSyncService(store: a, clock: clock, device: "Studio", deviceID: "studio")
+        expect(sync.enable(folder: folder) == .synced, "sync is on, with this Mac's bundle written")
+        let manifest = folder.appendingPathComponent(SettingsSync.folderName).appendingPathComponent(SettingsSync.manifestName)
+        let written = try? Data(contentsOf: manifest)
+        let encodes = sync.localEncodes
+
+        // Ten switches, a second apart, then past the write soon (14 s in all, before the 30-second look).
+        for i in 0..<10 {
+            clock.advance(by: 1)
+            a.selectTab(tabs[i % tabs.count])
+        }
+        clock.advance(by: SettingsSync.writeSoonDelay + 1)
+        expect(sync.localEncodes == encodes, "tab switches encode nothing (\(sync.localEncodes - encodes) times)")
+        expect((try? Data(contentsOf: manifest)) == written, "and write nothing before the look")
+        sync.disable()
+    }
+
+    /// The other side of the switch test: a rename still goes up 3 s later, encoded once, in the bytes
+    /// the bundle always had (pretty-printed, sorted keys, items by id string), and only once.
+    @MainActor
+    private static func syncWritesARenameOnceInTheSameBytes() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("cra-sync-rename-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = ManualScheduler()
+        let a = SidebarStore(clock: clock)
+        let tabs = (0..<5).map { a.createTab(url: "https://example.com/rename-\($0)").id }
+        let sync = SettingsSyncService(store: a, clock: clock, device: "Studio", deviceID: "studio")
+        expect(sync.enable(folder: folder) == .synced, "sync is on, with this Mac's bundle written")
+        let bundle = folder.appendingPathComponent(SettingsSync.folderName)
+        let manifest = bundle.appendingPathComponent(SettingsSync.manifestName)
+        let written = try? Data(contentsOf: manifest)
+        let encodes = sync.localEncodes
+
+        clock.advance(by: 2)
+        a.selectTab(tabs[1])
+        a.rename(tabs[2], to: "Renamed for sync")
+        clock.advance(by: SettingsSync.writeSoonDelay + 1)
+        let soon = try? Data(contentsOf: manifest)
+        expect(soon != nil && soon != written, "the rename is written 3 s after it")
+        expect(sync.localEncodes == encodes + 1, "encoded once (\(sync.localEncodes - encodes) times)")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        var expected = a.document.forSync()
+        expected.items.sort { $0.id.uuidString < $1.id.uuidString }
+        let sidebar = try? Data(contentsOf: bundle.appendingPathComponent(SettingsSync.sidebarName))
+        expect(sidebar != nil && sidebar == (try? encoder.encode(expected)), "in the same bytes as before")
+
+        // Nothing changed since: no second write, no second encode, until the look.
+        clock.advance(by: SettingsSync.writeSoonDelay + 1)
+        expect((try? Data(contentsOf: manifest)) == soon, "written once")
+        expect(sync.localEncodes == encodes + 1, "and encoded once")
         sync.disable()
     }
 

@@ -143,8 +143,15 @@ final class SettingsSyncService {
         }
     }
 
-    /// This Mac's bundle without last-active times.
-    private func currentShape() -> Shape { shape(of: localBundle()) }
+    /// This Mac's bundle without last-active times, built from the store's values: a tab switch moves
+    /// `documentKey` (last-active times), so going through `localFiles()` encoded the whole sidebar on
+    /// the main thread 3 s after every switch only to compare a shape that leaves those times out.
+    /// The bundle is encoded only when `poll()` has something to write.
+    private func currentShape() -> Shape {
+        var doc = store.document.forSync()
+        doc.sortItemsForSync()
+        return Shape(document: doc.withoutActivity(), settings: store.settings.forSync(), keybindings: Self.localKeybindings())
+    }
 
     private func shape(of bundle: Bundle) -> Shape {
         Shape(document: bundle.document.withoutActivity(), settings: bundle.settings, keybindings: bundle.keybindings)
@@ -440,7 +447,7 @@ final class SettingsSyncService {
     private var lastDecoded: (sidebar: String, settings: String, document: SidebarDocument, appSettings: AppSettings)?
 
     private func localFiles() throws -> Local {
-        let keys = (try? Data(contentsOf: AppPaths.file(SettingsSync.keybindingsName))) ?? Data("{}".utf8)
+        let keys = Self.localKeybindings()
         let settings = store.settings.forSync()
         let key = Local.Key(document: store.documentKey, settings: settings, keybindings: keys)
         if let local, local.key == key { return local }
@@ -459,8 +466,12 @@ final class SettingsSyncService {
         if let made = try? localFiles() { return made.bundle }
         var doc = store.document.forSync()
         doc.sortItemsForSync()
-        let keys = (try? Data(contentsOf: AppPaths.file(SettingsSync.keybindingsName))) ?? Data("{}".utf8)
-        return Bundle(document: doc, settings: store.settings.forSync(), keybindings: keys)
+        return Bundle(document: doc, settings: store.settings.forSync(), keybindings: Self.localKeybindings())
+    }
+
+    /// This Mac's keybindings.json as the bundle carries it: `{}` when there is none.
+    private static func localKeybindings() -> Data {
+        (try? Data(contentsOf: AppPaths.file(SettingsSync.keybindingsName))) ?? Data("{}".utf8)
     }
 
     private func files(of bundle: Bundle) throws -> [String: Data] {
