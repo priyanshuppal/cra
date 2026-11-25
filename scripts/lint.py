@@ -41,6 +41,10 @@ gains a finding fails, one that loses one is reported so the baseline can come d
       events off the window's scroll monitor once it starts over such a view, so a space or
       Library swipe begun there never arrives, or loses its end and stays between two pages (the
       Library's Downloads list, 9 Nov 2026). Use SidebarListScrollView, which opts out.
+  literal-contents-scale
+      contentsScale = <number>: a layer rasterised at a fixed scale is soft on a 1x display and
+      never follows the window to another one. Use window?.backingScaleFactor, and set it again
+      in viewDidChangeBackingProperties (the calendar countdown and Space creation emoji, 26 Nov 2026).
   perf-boundary
       The performance recorder stays removable (#91, docs/performance.md): outside its two folders
       only the files in PERF_CALLERS reach it, and inside Sources/Cra/Perf only PerfCEF.swift sees
@@ -66,6 +70,7 @@ PERF_CALLERS = {"App/main.swift", "App/AppDelegate.swift", "Services/BrowserMana
                 "UI/Settings/SettingsWindowController.swift"}
 PERF_NAME = re.compile(r"\b(?:Perf(?:[A-Z]\w*)?|PerformancePane)\b")
 NETWORK = re.compile(r"\bURLSession\b|\bCFNetwork\b|\bNWConnection\b|\bNWPathMonitor\b|^\s*import\s+Network\b|\bCFSocket\w*|\bCFStream\w*|\bsocket\(")
+LITERAL_SCALE = re.compile(r"\bcontentsScale\s*=\s*\d+(?:\.\d+)?\s*$")
 CLOCK_FILES = {"Services/SidebarStore.swift", "Services/BrowserManager.swift", "Services/LiveFolderManager.swift",
                "Services/SidebarIntegrity.swift", "App/AppComposition.swift"}
 
@@ -112,6 +117,8 @@ def findings():
                 hit("timer-outside-scheduler", rel, i)
             if rel in CLOCK_FILES and re.search(r"\bDate\(\)", line):
                 hit("wall-clock-in-decision", rel, i)
+            if LITERAL_SCALE.search(line):
+                hit("literal-contents-scale", rel, i)
             if "withObservationTracking" in line:
                 hit("raw-observation-tracking", rel, i)
             if rel.startswith(PERF_DIRS):

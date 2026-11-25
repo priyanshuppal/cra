@@ -112,6 +112,9 @@ a finding fails, and when one loses a finding the baseline comes down
   ([CLAUDE.md](../CLAUDE.md) has the layers).
 - `perf-no-network`: networking under either Perf folder. The performance recorder never sends
   anything ([performance.md](performance.md)).
+- `literal-contents-scale`: `contentsScale = 2` or any number. The layer is soft on a 1x display
+  and never follows the window to another; use `window?.backingScaleFactor` and set it again in
+  `viewDidChangeBackingProperties`.
 - `perf-boundary`: the recorder reached from a file outside its list, or `CraCEF` imported in
   `Sources/Cra/Perf` anywhere but `PerfCEF.swift`, so it stays removable and testable.
 
@@ -152,6 +155,11 @@ on throwaway profiles; `scripts/scenario.sh <name>` runs one without the rest of
 `auto-theme` flips the app between light and dark (`cra://debug?systemAppearance=`) and reads
 which half each window draws (`cra://debug?themeShown=<label>`): an Auto space must switch its
 window content and sidebar both ways, and a Light one must not (#155).
+
+`sidebar-pixel-grid` runs on a virtual 1x display of its own (`screen 1x`, "Cra Test Display 1x" from
+`scripts/test-display.sh <w> <h> 1x`), where a half point falls between pixels, and reads
+`cra://debug?offGrid=<label>&in=rows`: every text field, image view and text layer in the sidebar's rows must start
+on a whole pixel (CraCore's `PixelGrid`). At 2x a half point is a whole pixel, so only 1x catches it.
 
 `fullscreen` takes over a Space and runs only with `CRA_SCENARIO_SCREEN=1` (CI does).
 So do `pip-window-covered` and `pip-window-minimised`: a background copy reports every window

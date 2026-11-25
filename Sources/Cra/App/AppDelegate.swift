@@ -1803,6 +1803,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 CraLog.note("new tab row \(label): \(row?.debugLook ?? "none")")
                 return
             }
+            // offGrid=<label>[&in=rows]: "off grid <label>: none (<n> checked at <s>x)", or each text field, image view
+            // and CATextLayer-hosting view (in the window, or only the sidebar's rows) whose window-space origin is
+            // between pixels, as "<Row>><View> x,y; …" (OffGridReadout). A half point is between pixels at 1x.
+            if let label = dict["offGrid"] {
+                let report = main.window.map { OffGridReadout.report(in: $0, rowsOnly: dict["in"] == "rows") } ?? "no window"
+                CraLog.note("off grid \(label): \(report)")
+                return
+            }
             // hover=TabRowView,1: that sidebar row hovered as if the pointer were on it (snapshots of
             // hover-only controls, #243) until the pointer moves or the sidebar changes. The URL pill
             // and favorite tiles take it too (#293), and the space dock's cells (#252).

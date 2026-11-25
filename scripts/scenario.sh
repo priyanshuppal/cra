@@ -81,6 +81,9 @@
 #                               and a copy of it one version on takes its place; with `chrome`, that copy's engine
 #                               is on another Chrome too (Versions/<chrome> moved), so new pages can't start (the
 #                               recorder's "launch failed" then counts as no crash)
+#   screen 1x                   the run's windows on a virtual 1x display ("Cra Test Display 1x", scripts/test-display.sh),
+#                               made for it and taken away after: what an external monitor shows, where half points
+#                               land between pixels
 #   requires screen
 #   port <n>                   serve ${PAGE} on a fixed port (snapshots show the address)
 # The fixture server answers an address with ?delay=<s> (or &delay=<s>) that many seconds late, and /auth with an
@@ -259,6 +262,14 @@ while read -r _ kv; do app_env+=("$kv"); done < <(grep '^env ' "$FILE")
 if grep -q '^home$' "$FILE"; then
   mkdir -p "$DATA/home/Downloads"
   app_env+=(CFFIXED_USER_HOME="$DATA/home")
+fi
+# screen 1x: a 1x display of its own for the run (CRA_TEST_SCREEN names it), gone when the run ends.
+VDISPLAY1X=""
+if grep -q '^screen 1x$' "$FILE"; then
+  scripts/test-display.sh 1440 900 1x >/dev/null || { echo "$NAME: macOS wouldn't make the 1x display"; exit 2; }
+  VDISPLAY1X="$(cat build/vdisplay-1x.pid)"
+  trap 'kill "$VDISPLAY1X" 2>/dev/null' EXIT
+  app_env+=(CRA_TEST_SCREEN="Cra Test Display 1x")
 fi
 # Past onboarding, and nothing taken from this Mac's Arc (its toolbar default) unless asked.
 if ! grep -q '^fresh' "$FILE" && [ ! -f "$DATA/settings.json" ]; then
@@ -458,6 +469,7 @@ cleanup() {
   for p in "${PIDS[@]}"; do kill -KILL "$p" 2>/dev/null; done
   [ -n "${COVER:-}" ] && kill "$COVER" 2>/dev/null
   [ -n "${BYSTANDER:-}" ] && kill "$BYSTANDER" 2>/dev/null
+  [ -n "$VDISPLAY1X" ] && kill "$VDISPLAY1X" 2>/dev/null
   kill "$SERVER" "$STALLER" "$TRICKLER" "$WS_SERVER" 2>/dev/null
   cp "$DATA"/cra*.log "$OUT/" 2>/dev/null
   [ -n "${CRA_SCENARIO_DATA:-}" ] || rm -rf "$DATA"
@@ -652,7 +664,7 @@ while IFS= read -r raw || [ -n "$raw" ]; do
       fi
       rm -rf "$APP" && mv "$next" "$APP"
       echo "  Cra.app replaced by $version${2:+ on another Chrome}" ;;
-    fresh|requires|port|seed|env|arg|extension|profile|home|crash-report|hold-fds) ;;
+    fresh|requires|screen|port|seed|env|arg|extension|profile|home|crash-report|hold-fds) ;;
     *) problem "unknown scenario line: $line" ;;
   esac
 done < "$FILE"
