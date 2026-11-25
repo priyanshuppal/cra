@@ -25,6 +25,9 @@ public enum PeekLayout {
     public static let buttonTop: CGFloat = 7
     public static let buttonPitch: CGFloat = 43.5
     public static let buttonCount = 3
+    /// Room kept between the button column and the window's edge when the area is too narrow for
+    /// Arc's 80 % card to leave the column inside it (Arc was measured only at 1728 pt).
+    public static let buttonMargin: CGFloat = 8
     /// The page under a Peek (Arc: 233/240/254 → 178/172/151 over the window's background).
     public static let pageAlpha: CGFloat = 0.28
     /// The page under a Peek also draws back a little, its margins widening, unless pages fill the
@@ -344,8 +347,13 @@ public enum PeekLayout {
         return CGRect(x: contentMinX, y: 0, width: max(0, maxX - contentMinX), height: window.height)
     }
 
+    /// `widthFraction` of the area, as Arc, but never so wide that the button column beside it
+    /// (`buttonGap` + a button + `buttonMargin` each side, the card being centred) leaves the area:
+    /// under about 550 pt (a 640 pt window with a 260 pt sidebar) the 80 % card pushed it past the
+    /// window's edge.
     public static func card(in area: CGRect) -> CGRect {
-        let w = (area.width * widthFraction).rounded()
+        let room = (area.width - 2 * (buttonGap + buttonSize.width + buttonMargin)).rounded(.down)
+        let w = max(0, min((area.width * widthFraction).rounded(), room))
         return CGRect(x: (area.midX - w / 2).rounded(), y: area.minY + verticalInset,
                       width: w, height: max(0, area.height - 2 * verticalInset))
     }
