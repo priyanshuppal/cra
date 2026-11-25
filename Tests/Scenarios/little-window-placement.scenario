@@ -1,0 +1,33 @@
+# A new Little Window opens in the middle of the screen, or 24 pt right of and below the Little Window in front.
+# Peeks don't count: a Peek waiting on another tab pushed the first real Little Window 24 pt off the middle,
+# 72 pt with three. `littlePlace` reads how far the newest one is from the middle of the screen.
+budget rss=900 stalls50=40
+pace 0.5
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false, "peekInEveryTab": true, "defaultLinkDestination": {"littleWindow": {}}}
+
+cra://open?url=${PAGE}?n=hub
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+wait 1
+cra://action/pinTab
+wait 0.5
+# A Peek from the pinned tab, left waiting there when a link inside it opens a tab.
+cra://debug?cdp=Runtime.evaluate&params={"expression":"String(!!window.open('${PAGE}?n=peek'))","userGesture":true}
+expect-log peek: from
+wait 1.5
+cra://debug?target=little&cdp=Runtime.evaluate&params={"expression":"String(!!window.open('${PAGE}?n=link'))","userGesture":true}
+wait 1.5
+cra://debug?peeks=parked
+expect-log Cra peeks parked: hidden \S+n=peek$
+
+# The first Little Window: in the middle, the parked Peek not counted.
+cra://debug?externalURL=${PAGE}?n=first
+wait 2
+cra://debug?littlePlace=first
+expect-log little place first: right=0 down=0 windows=1$
+
+# A second one cascades off the first.
+cra://debug?externalURL=${PAGE}?n=second
+wait 2
+cra://debug?littlePlace=second
+expect-log little place second: right=24 down=24 windows=2$
+reject-log fault:
