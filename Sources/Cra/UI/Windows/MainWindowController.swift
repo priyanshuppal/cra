@@ -942,7 +942,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     /// `cra://debug?tabMenu=<n>`: logs the menu a right-click on the focused space's n-th listed tab
     /// opens, nothing picked (rows as menuReadout writes them, then its Edit Pinned Page and Move to
     /// submenus). `run` picks a row by title, in a submenu too, and logs the space's pinned and Today
-    /// rows (page queries) and the open tab (#600).
+    /// rows (page queries) and the open tab (#600); on a folder, what it copied after them.
     func testTabMenu(_ n: Int, label: String, run: String?, split: Bool = false, folder: Bool = false) {
         let kind = folder ? "folder menu" : split ? "split menu" : "tab menu"
         func rows(in v: NSView) -> [SidebarRowView] {
@@ -973,14 +973,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         }
         let all = menu.items + menu.items.flatMap { $0.submenu?.items ?? [] }
         guard let run, let item = all.first(where: { $0.title == run }), let owner = item.menu else { return }
-        owner.performActionForItem(at: owner.index(of: item))
+        // A folder's copy rows are seen by what reached the clipboard, which then gets its old contents back.
+        var copied = ""
+        if folder {
+            copied = " copied: " + Self.probeClipboard { owner.performActionForItem(at: owner.index(of: item)) }
+        } else {
+            owner.performActionForItem(at: owner.index(of: item))
+        }
         guard let space = store.space(focusedSpaceID) else { return }
         let query = { (id: UUID) in self.store.item(id)?.tab.flatMap { URL(string: $0.url)?.query } ?? "-" }
         let list = { (container: UUID) in
             self.store.children(of: container).map { $0.isSplit ? $0.children.map(query).joined(separator: "+") : query($0.id) }.joined(separator: " ")
         }
         let open = store.selectedTabID(window: windowID).map(query) ?? "-"
-        CraLog.note("\(kind) \(label) ran \(run): pinned: \(list(space.pinnedContainerID)) today: \(list(space.todayContainerID)) open: \(open)")
+        CraLog.note("\(kind) \(label) ran \(run): pinned: \(list(space.pinnedContainerID)) today: \(list(space.todayContainerID)) open: \(open)\(copied)")
     }
 
     /// `cra://debug?spaceMenu=<label>`: logs the menu a right-click on the open space's header
