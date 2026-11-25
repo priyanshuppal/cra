@@ -33,11 +33,17 @@ final class SiteIconLoader {
 
     /// Asks for the icon of the row's site when SiteIconQueue says it may, once a launch, rows on screen
     /// first. It only queues: the fetches start on the next turn of the main loop, so a view may call it
-    /// while it reads the cache. `done` runs when that fetch ends, stored or not.
+    /// while it reads the cache. `done` runs when that fetch ends, stored or not, or when the row's icon lands
+    /// from disk.
     func want(_ row: SiteIconQueue.Row, into cache: FaviconCache, done: (() -> Void)? = nil) {
         self.cache = cache
-        // On its way from disk (FaviconCache.prefetch): a row asks again if it isn't there.
-        guard !cache.isLoading(row.iconKey), queue.want(row) else { return }
+        // On its way from disk (FaviconCache.prefetch): a row asks again if it isn't there. A list that
+        // observes nothing hears when it lands.
+        if cache.isLoading(row.iconKey) {
+            if let done { cache.whenLoaded(row.iconKey, done) }
+            return
+        }
+        guard queue.want(row) else { return }
         if let done, let host = FaviconKey.key(for: row.url) { waiting[host, default: []].append(done) }
         guard !pumpQueued else { return }
         pumpQueued = true

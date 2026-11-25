@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import ImageIO
 import Observation
 
@@ -23,13 +24,19 @@ final class FaviconCache {
     @ObservationIgnored private var attemptedDiskLoad: Set<String> = []
     /// What reads a key depends on its signal, bumped when that key's icon changes.
     @ObservationIgnored private var signals: [String: FaviconKeySignal] = [:]
-    /// Each stored icon's pixels, so the same icon reported again changes nothing.
-    @ObservationIgnored private var pixels: [String: Data] = [:]
+    /// A digest of each stored icon's pixels, so the same icon reported again changes nothing. Not the
+    /// pixels themselves: those were a second copy of every icon in memory.
+    @ObservationIgnored private var pixels: [String: SHA256.Digest] = [:]
     /// Keys whose file holds the icon in memory: storing the same pixels again needn't write it.
     @ObservationIgnored private var onDisk: Set<String> = []
     /// Keys `prefetch` is reading off the main thread, and which reset() they were asked after.
     @ObservationIgnored private var loading: Set<String> = []
     @ObservationIgnored private var generation = 0
+    /// What `whenLoaded` holds until a loading key lands.
+    @ObservationIgnored private var landing: [String: [() -> Void]] = [:]
+    /// Keys whose file write is still queued: trimmed, they would read a file that isn't there yet, and
+    /// SiteIconQueue asks for a site's icon once a launch.
+    @ObservationIgnored private var writing: [String: Int] = [:]
 
     /// FaviconKey.key(for:), for code written before it moved to CraCore (#51).
     static func key(for urlString: String) -> String? { FaviconKey.key(for: urlString) }
@@ -38,8 +45,14 @@ final class FaviconCache {
         guard let key else { return nil }
         observeKey(key)
         if let img = images[key] { return img }
-        // On its way (prefetch): shown as missing until it lands, which tells whoever asked.
-        if loading.contains(key) { return nil }
+        // On its way (prefetch): until it lands, which tells whoever asked, the site's icon if it is in memory.
+        // Not read from disk here, which is what prefetch spares the main thread.
+        if loading.contains(key) {
+            let site = FaviconKey.siteKey(of: key)
+            guard site != key else { return nil }
+            observeKey(site)
+            return images[site]
+        }
         if !attemptedDiskLoad.contains(key) {
             attemptedDiskLoad.insert(key)
             let file = AppPaths.favicons.appendingPathComponent(Self.fileName(key))
@@ -60,6 +73,15 @@ final class FaviconCache {
     /// Whether `key`'s icon is being read off the main thread: a row without it waits for it rather than
     /// fetching the site's (SiteIconLoader).
     func isLoading(_ key: String?) -> Bool { key.map(loading.contains) ?? false }
+
+    /// Runs `done` once `key` has landed from a prefetch, or right away when it isn't loading: for a list
+    /// that observes nothing (Library ▸ Boosts, the command bar) and reloads itself.
+    func whenLoaded(_ key: String?, _ done: @escaping () -> Void) {
+        guard let key, loading.contains(key) else { done(); return }
+        landing[key, default: []].append(done)
+    }
+
+    private func landed(_ key: String) { landing.removeValue(forKey: key)?.forEach { $0() } }
 
     /// Reads the icons of `keys` that aren't in memory yet from disk on the persistence queue, decoded there
     /// with their glyph tone worked out, and hands them over in one batch: a space's list asks for its rows'
@@ -109,16 +131,19 @@ final class FaviconCache {
     }
 
     /// A prefetch's batch: what is still awaited and not stored meanwhile goes in, and whoever read
-    /// a key in it as missing is told.
+    /// a key in it as missing is told. An icon stored meanwhile stays, and told them already.
     private func land(_ batch: [(String, Decoded?)], generation: Int) {
         guard generation == self.generation else { return }
         for (key, decoded) in batch where loading.remove(key) != nil {
-            if let decoded, images[key] == nil {
-                images[key] = NSImage(cgImage: decoded.image, size: decoded.size)
-                onDisk.insert(key)
-                if let tone = decoded.tone { glyphTone[key] = .some(tone) }
+            if images[key] == nil {
+                if let decoded {
+                    images[key] = NSImage(cgImage: decoded.image, size: decoded.size)
+                    onDisk.insert(key)
+                    if let tone = decoded.tone { glyphTone[key] = .some(tone) }
+                }
+                notify(key)
             }
-            notify(key)
+            landed(key)
         }
     }
 
@@ -231,6 +256,10 @@ final class FaviconCache {
         onDisk = []
         loading = []
         generation += 1
+        // The batches asked before this one are dropped as they land: what waits on them is told now.
+        let waiting = landing
+        landing = [:]
+        waiting.values.forEach { $0.forEach { $0() } }
         dominant = [:]
         selectionPalettes = [:]
         glyphTone = [:]
@@ -242,7 +271,7 @@ final class FaviconCache {
     /// What a view shows keeps its image; no one is told.
     func trimForMemoryPressure(keeping: Set<String>) {
         let keep = CacheTrim.survivors(cached: images.keys, keeping: keeping)
-        for key in images.keys where !keep.contains(key) {
+        for key in images.keys where !keep.contains(key) && writing[key] == nil {
             images[key] = nil
             attemptedDiskLoad.remove(key)
             pixels[key] = nil
@@ -291,6 +320,7 @@ final class FaviconCache {
         onDisk.remove(key)
         loading.remove(key)
         notify(key)
+        landed(key)
         try? FileManager.default.removeItem(at: AppPaths.favicons.appendingPathComponent(Self.fileName(key)))
     }
 
@@ -313,23 +343,30 @@ final class FaviconCache {
         guard persist else { onDisk.remove(key); return }
         onDisk.insert(key)
         let file = AppPaths.favicons.appendingPathComponent(Self.fileName(key))
+        writing[key, default: 0] += 1
         Self.persistenceQueue.async {
-            guard let tiff = image.tiffRepresentation,
-                  let rep = NSBitmapImageRep(data: tiff),
-                  let png = rep.representation(using: .png, properties: [:]) else { return }
-            try? png.write(to: file, options: .atomic)
+            if let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) {
+                try? png.write(to: file, options: .atomic)
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let left = (self.writing[key] ?? 1) - 1
+                    self.writing[key] = left > 0 ? left : nil
+                }
+            }
         }
     }
 
-    /// An icon's decoded pixels and their layout: equal for the same icon however it arrived.
-    private static func fingerprint(of image: NSImage) -> Data? {
+    /// A digest of an icon's decoded pixels and their layout: equal for the same icon however it arrived.
+    private static func fingerprint(of image: NSImage) -> SHA256.Digest? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil), let bytes = cg.dataProvider?.data else { return nil }
-        var out = Data()
+        var hash = SHA256()
         for n in [cg.width, cg.height, cg.bytesPerRow, cg.bitsPerPixel, Int(cg.bitmapInfo.rawValue)] {
-            withUnsafeBytes(of: n) { out.append(contentsOf: $0) }
+            withUnsafeBytes(of: n) { hash.update(bufferPointer: $0) }
         }
-        out.append(bytes as Data)
-        return out
+        hash.update(data: bytes as Data)
+        return hash.finalize()
     }
 
     nonisolated static func fileName(_ key: String) -> String {
