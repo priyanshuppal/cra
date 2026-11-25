@@ -368,7 +368,7 @@ enum SpaceStyleTick {
 
     static func play() {
         count += 1
-        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        Haptics.play(.generic)
     }
 }
 

@@ -1012,7 +1012,7 @@ final class FavoritesGridView: NSView {
             store.addToFavorites(d.id, in: spaceID, at: index)
         }
         if store.settings.hapticFeedbackOnReorder {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .drawCompleted)
+            Haptics.play(.alignment, at: .drawCompleted)
         }
         // The new order lands with the slot closing, so nothing jumps.
         sync()

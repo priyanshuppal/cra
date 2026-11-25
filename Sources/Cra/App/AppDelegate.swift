@@ -3083,6 +3083,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 CraLog.note("theme pad point: \(Int(onScreen.x)) \(Int(top - onScreen.y))")
                 return
             }
+            // haptics=<label>: "Cra haptics <label>: generic=<n> alignment=<n> levelChange=<n>", every one played
+            // since launch or since haptics=reset.
+            if let label = dict["haptics"] {
+                if label == "reset" { Haptics.reset() } else { NSLog("Cra haptics %@: %@", label, Haptics.readout) }
+                return
+            }
             if dict["jumpPill"] != nil { SpaceListView.jumpToSelected(for: main.sidebarUI, space: store.focusedSpaceID); return }
             // The open folder preview: the pointer resting on a row, the list scrolled under it, and
             // "Cra folderPreview <label>: lit=<rows> top=<pt>", the rows with the pointer's highlight and how far
@@ -3523,6 +3529,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // dropFile=<path>: that file let go in the middle of the shown page, as from the Finder (#593).
             if let path = dict["dropFile"], let container = main.currentBrowser?.containerView {
                 DebugFileDrop.drop(path, on: container)
+                return
+            }
+            // dividerDrag=<pt>,<pt>,…: the first split divider dragged through those offsets and let go.
+            if let steps = dict["dividerDrag"] {
+                main.shell.debugDragDivider(steps.split(separator: ",").compactMap { Double($0) }.map { CGFloat($0) })
                 return
             }
             // dropSplit=<text>[&link=1][&name=<link text>]&x=<0…1>&y=<0…1>: the tab whose URL holds the
