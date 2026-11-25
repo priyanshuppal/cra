@@ -2446,6 +2446,14 @@ Arc's popup this time, so geometry is not measured.
   download cards (its only other toast design) are gone (2 Nov 2026, #85 follow-up): the hover list shows running,
   failed and cancelled downloads too (DownloadHistory.live, DownloadRow). [U] Arc's exact wording and icon for a
   running or failed row (Cra: "81.3 MB of 104.9 MB — 30.1 MB/s", the file type's icon) — to capture live.
+- Window menu's Library rows (Arc 1.174.3, 26 Nov 2026; small strings decoded from the mov/movk immediates
+  beside their comments in `llvm-objdump -d` of the arm64 slice, 0x100320630–0x100321140): each row flips while
+  its page is open. Open Library… / Close Library, View Downloads… / Hide Downloads ("lock close the downloads
+  pane"), View Media… / Hide Media ("Screenshots & Captures"), View Easels… / Hide Easels (or View Easels &
+  Notes… / Hide Easels & Notes, both kept as C strings), View Archive… / Hide Archive, View Boosts… / Hide
+  Boosts ("exit the Library’s Boosts pane"). The binary has "View Downloads…" only, never without the ellipsis.
+  Cra: MenuBarTitles flips Open Library… and View Downloads…, the two rows that toggle; Cra's Media, Easels,
+  Boosts and Archive rows only show their page, so they keep their View titles.
 - Acting on a download (Arc 1.172.1, 9 Nov 2026, #272; strings of 15 bytes or fewer decoded from the mov/movk
   immediates of `otool -tV`):
   - "Download Context Menu" (ContextMenus): `Open %@`, `Copy %@`, Show in Finder, separator, Cancel Download,
