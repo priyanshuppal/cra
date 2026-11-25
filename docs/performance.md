@@ -84,8 +84,12 @@ create), page create, page load, waking a slept tab and framing an extension's p
 read with the long tasks every 5 s while Cra is active and on screen, and never in background tabs: long tasks, Chromium's long
 animation frames (`longFrames`, `longestFrameMs`: a passive observer, it asks for no frames) and
 the frames its videos played and dropped (`getVideoPlaybackQuality`). Renderer crashes, hangs
-and failed loads with their codes. Start-up phases (store loaded, Chromium started, windows shown, then the first page shown,
-committed and loaded), JSON load and save times (saves run on the
+and failed loads with their codes. Start-up phases (`PerfPhase`, milliseconds since the top of `main.swift`, the first
+time each is reached): `storeLoaded` (the data folder decoded), `engineStarting` (Cra's own start-up done, right before
+`runMessageLoop`, so `chromiumStarted − engineStarting` is Chrome's), `chromiumStarted`, `bootstrapStarted`,
+`windowsShown` (bootstrap ordered the windows in), `windowOnScreen` (the window server reports the front browser
+window visible: its first frame is on screen; none on a launch into onboarding), then the first page shown,
+committed and loaded. JSON load and save times (saves run on the
 persistence queue, so `jsonSave` is never a main-thread stall; `fileSaved` counts the writes by
 file name), the profile's and caches' size
 (at export only). The session: a random id, the launch number, the previous session and whether

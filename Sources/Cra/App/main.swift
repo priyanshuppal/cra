@@ -21,7 +21,7 @@ MainActor.assumeIsolated {
     let app = CraApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate
-    Perf.phase("storeLoaded")
+    Perf.phase(.storeLoaded)
 
     // The newest copy of Cra runs: an older install opens a newer one, and an older
     // Cra holding the profile quits rather than receiving this launch (NewestCopy).
@@ -103,7 +103,7 @@ MainActor.assumeIsolated {
         ChromiumQuitCancel.install { delegate.quitWasCancelled() }
 
         // Only now: the "another Cra is running" and failed-start exits above leave no session marker.
-        Perf.phase("chromiumStarted")
+        Perf.phase(.chromiumStarted)
         let info = Bundle.main.infoDictionary
         PerfRecorder.configure(owner: profileIsFree && noOtherCra,
                                recording: PerfSessionRules.recording(setting: delegate.store.settings.perfRecording,
@@ -117,6 +117,8 @@ MainActor.assumeIsolated {
         DispatchQueue.main.async { delegate.bootstrapIfNeeded() }
         HitchMonitor.startIfRequested()
     }
+    // Cra's own start-up work ends here; chromiumStarted − engineStarting is Chrome's.
+    Perf.phase(.engineStarting)
     CraCEFRuntime.runMessageLoop()
     if !ready { didNotStart() }
     PerfRecorder.quit()

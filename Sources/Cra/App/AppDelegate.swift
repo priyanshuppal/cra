@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func bootstrapIfNeeded() {
         guard !bootstrapped else { return }
         bootstrapped = true
+        Perf.phase(.bootstrapStarted)
         NSApp.setActivationPolicy(.regular)
         // Before any window docks: window managers see one Cra window, not its page and panels (#391).
         DockedWindowAccessibility.install()
@@ -66,7 +67,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 if last { CraWindow.stayBehindWhileComingForward = false }
             }
         }
-        installURLEventHandler()
         observeFrontmostApp()
         PerfCEF.install(app: self)
         CraCEFRuntime.setChromeHosting(store.settings.chromeEngine)
@@ -75,7 +75,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         observeGlobalShortcut()
         observeMenuBarMode()
         SoftwareUpdater.shared.start(app: self)
-        buildMenus()
         store.hasPage = { [unowned self] in self.runtime(for: $0).map { !$0.discarded } ?? false }
         store.tabPinned = { [unowned self] in TidyTitlesService.shared.tabPinned($0, store: self.store) }
         // On the next turn: the incognito window's own caller may still bring itself forward (#412).
@@ -110,9 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NotificationCenter.default.addObserver(forName: .craKeyBindingsChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.buildMenus() }
         }
-        // Saved page histories of tabs that are gone, other than the latest closed (PageHistory, #273).
-        PageHistoryStore.shared.prune(keeping: PageHistory.kept(
-            sidebarTabs: Set(store.allTabs().map(\.id)), archive: store.archive.map(\.id)))
+        // Saved page histories of tabs that are gone, other than the latest closed (PageHistory, #273):
+        // which ones are taken now, before auto-archive moves tabs; the files go after the first frame.
+        launchHistoriesKept = PageHistory.kept(sidebarTabs: Set(store.allTabs().map(\.id)), archive: store.archive.map(\.id))
         // Arc's "When opening Arc, restore windows from previous session", off: one window comes back.
         if !store.settings.restoreWindows { store.keepOnlyActiveWindow() }
         // Settings ▸ Advanced "When opening Cra, start on a new tab": the window in front opens on
@@ -140,6 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                     boosts.compactMap(\.tint?.engineString).last)
         }
         BoostStore.changed = { [weak self] host in for m in self?.mainWindows ?? [] { m.browsers.reapplyBoosts(host: host) } }
+        // The steps around the first frame, in LaunchSteps' order (CraCore, LaunchStepsTests).
+        LaunchSteps.steps(.beforeWindows).forEach(runLaunchStep)
         mainWindows = store.prefs.windows.map { MainWindowController(app: self, session: $0) }
         followKeyWindow()
         observeFlippingRows()
@@ -156,30 +157,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // As ⌘T: the command bar makes the new tab, Esc leaves the window empty.
             if startOnNewTab { DispatchQueue.main.async { [weak self] in self?.main.openCommandBar(.newTab) } }
         }
-        installKeyFallbackMonitor()
-        installSideButtonKeyMonitor()
-        installCommandFileWatcher()
-        handoff.start()
-        MCPServer.shared.start(app: self)
-        composition.startPeriodicWork { [weak self] in self?.sleepIdleTabs() }
         SparePages.shared.mayMake = { SparePage.keeps(pressure: PerfSystemSample.pressure(level: PerfSystemSampler.pressureLevel())) }
-        composition.sync.keybindingsChanged = { [weak self] in self?.bindings.reloadOverrides() }
-        composition.sync.start()
-        SharingService.shared.start(store: store, clock: composition.clock)
-        observeSystemWake()
-        logSidebarProblems()
-        LiveFolderManager.shared.start(store: store)
-        store.attributeHistoryProfiles()
-        // A restart into an update while the user was away leaves the front app alone.
-        if HitchMonitor.background {
-            // Measured behind whatever is in front; still on screen, so pages keep drawing.
-            for w in mainWindows { w.window?.orderBack(nil) }
-        } else if !SoftwareUpdater.shared.launchedByAutoUpdate {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        LaunchSteps.steps(.beforeShow).forEach(runLaunchStep)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.installURLEventHandler() }
         // The Site Control Center's Share would otherwise pay for finding the share extensions.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { SharePicker.warmUp() }
+        // The next turn: the run loop commits this pass's frame, the windows' first, before it.
+        DispatchQueue.main.async { [weak self] in LaunchSteps.steps(.afterFirstFrame).forEach { self?.runLaunchStep($0) } }
+        Perf.phase(.windowsShown)
+    }
+
+    /// The steps bootstrapIfNeeded runs in LaunchSteps' order.
+    private func runLaunchStep(_ step: LaunchSteps.Step) {
+        switch step {
+        case .urlEvents: installURLEventHandler()
+        case .menus: buildMenus()
+        case .autoArchive: composition.startPeriodicWork { [weak self] in self?.sleepIdleTabs() }
+        case .keyMonitors:
+            installKeyFallbackMonitor()
+            installSideButtonKeyMonitor()
+        case .commandFile: installCommandFileWatcher()
+        case .systemWake: observeSystemWake()
+        case .activate:
+            // A restart into an update while the user was away leaves the front app alone.
+            if HitchMonitor.background {
+                // Measured behind whatever is in front; still on screen, so pages keep drawing.
+                for w in mainWindows { w.window?.orderBack(nil) }
+            } else if !SoftwareUpdater.shared.launchedByAutoUpdate {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        case .pageHandlers: installPageHandlers()
+        case .pendingURLs:
+            let urls = pendingURLs
+            pendingURLs = []
+            for u in urls { openExternalURL(u) }
+        case .handoff: handoff.start()
+        case .mcpServer: MCPServer.shared.start(app: self)
+        case .settingsSync:
+            composition.sync.keybindingsChanged = { [weak self] in self?.bindings.reloadOverrides() }
+            composition.sync.start()
+        case .sharing: SharingService.shared.start(store: store, clock: composition.clock)
+        case .sidebarCheck: logSidebarProblems()
+        case .liveFolders: LiveFolderManager.shared.start(store: store)
+        case .historyProfiles: store.attributeHistoryProfiles()
+        case .pageHistoryPrune:
+            // With any tab made since (a link that started Cra).
+            PageHistoryStore.shared.prune(keeping: launchHistoriesKept.union(store.allTabs().map(\.id)))
+            launchHistoriesKept = []
+        }
+    }
+
+    /// Saved page histories kept at launch, taken before auto-archive (LaunchSteps.Step.pageHistoryPrune).
+    private var launchHistoriesKept: Set<UUID> = []
+
+    /// What pages and extensions ask of the browser outside a tab, from the first pass on.
+    private func installPageHandlers() {
         // Extension welcome pages and chrome.tabs.create land in Cra, not in a Chrome window.
         // --load-extension extensions count as freshly installed on every launch, so their
         // onInstalled welcome pages come back each time: right after launch, drop them unless
@@ -187,9 +219,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let launchedAt = Date()
         let welcomedFile = AppPaths.file("extensions-welcomed.json")
         let welcomed = Set((try? JSONDecoder().decode([String].self, from: Data(contentsOf: welcomedFile))) ?? [])
-        let installed = ExtensionStore.shared.entries.map(\.extensionID)
-        let hasNewExtension = !Set(installed).isSubset(of: welcomed)
-        try? JSONEncoder().encode(installed.sorted()).write(to: welcomedFile, options: .atomic)
+        let (hasNewExtension, save) = LaunchSteps.extensionsWelcomed(welcomed, installed: ExtensionStore.shared.entries.map(\.extensionID))
+        // Written only when the list changed, off the main thread.
+        if let save, let data = try? JSONEncoder().encode(save) { writeInBackground(data, to: welcomedFile) }
         DownloadDestinations.install(store: store)
         AppLinkPrompt.install()
         CraBrowser.installViewSourceHandler()
@@ -237,10 +269,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 for u in urls { self.openExternalURL(u) }
             }
         }
-        let urls = pendingURLs
-        pendingURLs = []
-        for u in urls { openExternalURL(u) }
-        Perf.phase("windowsShown")
     }
 
     /// A fresh install runs Dia's onboarding (cover, default browser, privacy,

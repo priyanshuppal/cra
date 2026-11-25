@@ -471,7 +471,7 @@ final class BrowserManager: NSObject, @preconcurrency CraBrowserDelegate, WebKit
             HitchMonitor.mark("page-shown")
             if let rt = visibleRuntime {
                 Perf.visibleSite(rt.browser.isIncognito ? nil : SiteNames.siteHost(of: rt.browser.currentURL))
-                Perf.phase("firstPageShown")
+                Perf.phase(.firstPageShown)
             }
         }
         if focus, let f = visibleTabID, let rt = runtimes[f] { rt.browser.setFocused(true) }
@@ -1630,7 +1630,7 @@ final class BrowserManager: NSObject, @preconcurrency CraBrowserDelegate, WebKit
         if let rt = runtimes[id] { rt.toolbarSamplePending = !loading }
         if !loading { sampleToolbarColor(id) }
         if !loading, let rt = runtimes[id], rt.probeWork != nil { scheduleProbe(id, rt, after: 3) }
-        if !loading, id == visibleTabID { Perf.phase("firstPageLoaded") }
+        if !loading, id == visibleTabID { Perf.phase(.firstPageLoaded) }
         delegate?.browserManagerDidUpdate(id)
     }
 
@@ -1639,7 +1639,7 @@ final class BrowserManager: NSObject, @preconcurrency CraBrowserDelegate, WebKit
         if committed { AppLinkPrompt.pageLoaded(browser) }
         guard let id = tabID(of: browser) else { return }
         // Start-up phases: firstPageShown, then the page's navigation committed, then loaded.
-        if committed, id == visibleTabID { Perf.phase("firstPageCommitted") }
+        if committed, id == visibleTabID { Perf.phase(.firstPageCommitted) }
         if committed {
             shareTheme(id, with: browser)
             applyBoost(to: browser, clearing: false)

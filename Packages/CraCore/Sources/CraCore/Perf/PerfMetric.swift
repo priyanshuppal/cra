@@ -22,6 +22,28 @@ public enum PerfMetric: String, Codable, CaseIterable, Sendable {
     case extensionPopup
 }
 
+/// Start-up phases, in the order a launch usually reaches them (a first page can show before the
+/// window server reports its window); the raw values are the keys of perf.json's
+/// `startup`, milliseconds since the top of main.swift, the first time each is reached.
+public enum PerfPhase: String, Codable, CaseIterable, Sendable {
+    /// AppDelegate made: the data folder's JSON files decoded.
+    case storeLoaded
+    /// Cra's own start-up work done, the engine about to start (right before runMessageLoop).
+    case engineStarting
+    /// Chromium is up (CraCEFRuntime.whenReady).
+    case chromiumStarted
+    /// AppDelegate.bootstrapIfNeeded begins.
+    case bootstrapStarted
+    /// bootstrapIfNeeded ordered the windows in and installed its handlers.
+    case windowsShown
+    /// The window server says the front browser window is visible: its first frame is on screen.
+    case windowOnScreen
+    /// The first page put on screen, its first commit and its first load.
+    case firstPageShown
+    case firstPageCommitted
+    case firstPageLoaded
+}
+
 /// What the recorder counts. Some carry a key (`loadError` the error code, `sleepRefusal` the
 /// reason); perf.json lists those per key.
 public enum PerfCounter: String, Codable, CaseIterable, Sendable {

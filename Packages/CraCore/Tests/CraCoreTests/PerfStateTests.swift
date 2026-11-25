@@ -101,6 +101,23 @@ struct PerfStateTests {
         #expect(s.longTasks == 0)
     }
 
+    /// Start-up's phases split Cra's own work from Chrome's (engineStarting) and ordering the
+    /// window in from its first frame on screen (windowOnScreen). The names are perf.json's keys.
+    @Test func startupKeepsFirstOfEachPhase() {
+        #expect(PerfPhase.allCases.map(\.rawValue) == [
+            "storeLoaded", "engineStarting", "chromiumStarted", "bootstrapStarted", "windowsShown", "windowOnScreen",
+            "firstPageShown", "firstPageCommitted", "firstPageLoaded",
+        ])
+        var s = PerfState()
+        for (i, phase) in PerfPhase.allCases.enumerated() { s.phase(phase.rawValue, ms: Double(100 * (i + 1))) }
+        // An occlusion change later on, a second window's first page: only the first counts.
+        for phase in PerfPhase.allCases { s.phase(phase.rawValue, ms: 99_999) }
+        let r = s.report(generatedAt: Self.start, session: Self.session(), selfCost: PerfSelfCost())
+        #expect(r.startup["engineStarting"] == 200 && r.startup["chromiumStarted"] == 300)
+        #expect(r.startup["windowsShown"] == 500 && r.startup["windowOnScreen"] == 600)
+        #expect(r.startup.count == PerfPhase.allCases.count && !r.startup.values.contains(99_999))
+    }
+
     /// Tab sleep's discard ends the page's renderer cleanly: Chromium's FastShutdown reports
     /// NORMAL_TERMINATION, which the engine names "unknown", and Chrome shows no "Aw, Snap!" for it.
     /// In 0.1.44 a user's outlook.live.com counted as a page crash the second tab sleep discarded it.
