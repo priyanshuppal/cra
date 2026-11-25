@@ -10,6 +10,7 @@ xcrun swiftc -parse-as-library ${CRA_TEST_SWIFTC_FLAGS:-} Packages/CraCore/Sourc
   Packages/CraCore/Sources/CraCore/TrafficLightLayout.swift \
   Packages/CraCore/Sources/CraCore/SidebarSide.swift \
   Packages/CraCore/Sources/CraCore/SidebarPresentation.swift \
+  Packages/CraCore/Sources/CraCore/ReducedMotion.swift Sources/Cra/UI/ReducedMotionSetting.swift \
   Tests/FloatingSidebarTests.swift \
   -o "$TEST_DIR/sidebar-tests"
 "$TEST_DIR/sidebar-tests"

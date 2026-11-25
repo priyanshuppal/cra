@@ -10,6 +10,7 @@ xcrun swiftc -swift-version 5 -parse-as-library ${CRA_TEST_SWIFTC_FLAGS:-} \
   Sources/Cra/UI/Sidebar/SidebarCreationMenu.swift \
   Sources/Cra/UI/BackForwardMenuView.swift \
   Sources/Cra/UI/ButtonHold.swift \
+  Packages/CraCore/Sources/CraCore/ReducedMotion.swift Sources/Cra/UI/ReducedMotionSetting.swift \
   Tests/BackForwardMenuViewTests.swift \
   -o "$TEST_DIR/back-forward-menu-tests"
 "$TEST_DIR/back-forward-menu-tests"
