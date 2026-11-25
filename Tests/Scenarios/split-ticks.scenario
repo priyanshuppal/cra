@@ -1,0 +1,21 @@
+# Arc 1.174.3's split view ticks (a generic haptic, now) as a dragged divider catches the 50/50
+# middle (SplitViewController's PaneResizeState.isCenterSnapped). Cra's divider snapped silently.
+budget stalls50=20
+pace 0.5
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true}
+
+cra://debug?windowSize=1200x800
+cra://open?url=${PAGE}?n=left
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+cra://open?url=${PAGE}?n=right
+cra://open?url=${PAGE}?n=shown
+wait 1
+cra://debug?dropSplit=n=right&x=0.97&y=0.5
+expect-log dropSplit: split horizontal n=shown \| n=right open=n=right shares=0\.50 0\.50$
+wait 1
+# The divider from the middle: away, back into the middle (a tick), held there (none), out and
+# back in (another), then let go away from it.
+cra://debug?haptics=reset
+cra://debug?dividerDrag=40,2,-1,3,-60,1,80
+cra://debug?haptics=divider
+expect-log Cra haptics divider: generic=2 alignment=0

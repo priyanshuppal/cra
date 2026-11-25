@@ -3408,6 +3408,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 DebugFileDrop.drop(path, on: container)
                 return
             }
+            // dividerDrag=<pt>,<pt>,…: the first split divider dragged through those offsets and let go.
+            if let steps = dict["dividerDrag"] {
+                main.shell.debugDragDivider(steps.split(separator: ",").compactMap { Double($0) }.map { CGFloat($0) })
+                return
+            }
             // dropSplit=<text>[&link=1][&name=<link text>]&x=<0…1>&y=<0…1>: the tab whose URL holds the
             // text (or a page's link to it) let go over the panes, at that fraction from their top left (#419).
             if let text = dict["dropSplit"] {

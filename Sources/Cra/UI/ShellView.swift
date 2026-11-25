@@ -769,9 +769,12 @@ final class ShellView: NSView {
     // MARK: Divider drags
 
     private var dragStartFactors: [UUID: CGFloat] = [:]
+    /// Whether the dragged divider holds two panes at half each.
+    private var paneDragSnapped = false
 
     private func beginPaneDrag(_ index: Int) {
         dragStartFactors = paneFactors
+        paneDragSnapped = false
         for c in paneCards { c.frozenWebBounds = nil }
         onPaneResizeBegan?()
     }
@@ -780,8 +783,21 @@ final class ShellView: NSView {
         let ids = paneCards.map(\.tabID)
         let panes = ids.map { SplitPaneLayout.Pane(id: $0, factor: dragStartFactors[$0] ?? (1 / CGFloat(max(1, ids.count)))) }
         let layout = SplitPaneLayout(panes: panes, orientation: splitOrientation, containerSize: paneArea(in: contentContainer.bounds).size)
-        paneFactors = layout.dragging(dividerAfter: index, by: delta).factors
+        let drag = layout.dragging(dividerAfter: index, by: delta)
+        paneFactors = drag.factors
         layoutContentChildren()
+        // Arc's tick as the divider catches the middle (PaneResizeState.isCenterSnapped).
+        if SnapTick.fires(was: paneDragSnapped, now: drag.snapped) { Haptics.play(.generic) }
+        paneDragSnapped = drag.snapped
+    }
+
+    /// `cra://debug?dividerDrag=<pt>,<pt>,…`: a drag of the first divider through those offsets from
+    /// where it starts, as its handle sends them, then let go.
+    func debugDragDivider(_ deltas: [CGFloat]) {
+        guard paneCards.count > 1 else { return }
+        beginPaneDrag(0)
+        for d in deltas { dragPane(0, delta: d) }
+        endPaneDrag()
     }
 
     private func endPaneDrag() {

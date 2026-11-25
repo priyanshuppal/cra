@@ -314,7 +314,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
                 }
             }
             shell.layoutSubtreeIfNeeded()
-            if resize.isSnapped, !wasSnapped {
+            if SnapTick.fires(was: wasSnapped, now: resize.isSnapped) {
                 Haptics.play(.alignment)
             }
         }
