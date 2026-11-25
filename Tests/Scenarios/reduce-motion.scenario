@@ -1,0 +1,25 @@
+# Reduce motion (System Settings ▸ Accessibility ▸ Display, here cra://debug?reduceMotion=1): ⌘S doesn't slide the
+# sidebar and page across the window, the window dissolves from one layout to the other, as Arc 1.174.3's views that
+# respectReduceMotion do. With it off the slide plays frame by frame as before (sidebar-slide-live's).
+budget rss=700 stalls50=10
+pace 0.5
+cra://debug?windowSize=1280x800
+cra://open?url=${PAGE}?n=reduce
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+wait 1
+cra://debug?reduceMotion=1
+expect-log reduce motion: on$
+cra://action/toggleSidebar
+expect-log sidebar slide: dissolved in [0-9]+ ms \(reduce motion\)
+expect-log sidebar slide: page moved [0-9]+ pt over [01] frames
+cra://action/toggleSidebar
+wait 0.5
+reject-log sidebar slide: page moved [0-9]+ pt over ([2-9]|[1-9][0-9]+) frames
+# Off again: Arc's slide, many frames.
+cra://debug?reduceMotion=0
+expect-log reduce motion: off$
+cra://action/toggleSidebar
+expect-log sidebar slide: page moved [0-9]+ pt over ([2-9]|[1-9][0-9]+) frames
+cra://action/toggleSidebar
+wait 0.5
+cra://debug?reduceMotion=system

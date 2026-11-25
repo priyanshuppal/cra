@@ -750,10 +750,14 @@ final class SpaceListView: NSView, NSDraggingSource {
             return
         }
         let freshSet = Set(fresh.map(ObjectIdentifier.init))
+        // Reduce motion: rows take their places at once and only the fades play.
+        let travels = ReducedMotion.now(.slide, contentChanges: false).plays
         for row in rows[near] {
-            guard let v = views[row.key], freshSet.contains(ObjectIdentifier(v)) else { continue }
+            guard let v = views[row.key] else { continue }
+            if !travels { v.frame = placed(row) }
+            guard freshSet.contains(ObjectIdentifier(v)) else { continue }
             // Rows opening inside a folder drop in from just above; others fade in place.
-            v.frame = placed(row).offsetBy(dx: 0, dy: row.depth > 0 ? -6 : 0)
+            if travels { v.frame = placed(row).offsetBy(dx: 0, dy: row.depth > 0 ? -6 : 0) }
             v.alphaValue = 0
         }
         NSAnimationContext.runAnimationGroup { ctx in

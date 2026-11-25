@@ -182,7 +182,9 @@ final class CombineDropPreview: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     /// `withAnimation(.spring(duration: 0.34, bounce: 0.22)) { open = true }` on appear.
+    /// With Reduce motion the preview dissolves in instead (layout()).
     private static func spring(_ layer: CALayer?, _ key: String, from: Any, to: Any) {
+        guard ReducedMotion.now(.spring).plays else { return }
         let a = CASpringAnimation(perceptualDuration: 0.34, bounce: 0.22)
         a.keyPath = key
         a.fromValue = from
@@ -197,6 +199,7 @@ final class CombineDropPreview: NSView {
         didOpen = true
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        if case .crossfade(let d) = ReducedMotion.now(.spring) { dissolveNextChange(d) }
         card.frame = bounds
         if let l = card.layer {
             l.borderColor = colors.textPrimary.withAlphaComponent(0.35).cgColor

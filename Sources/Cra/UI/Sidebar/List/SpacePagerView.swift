@@ -175,6 +175,14 @@ final class SpacePagerView: NSView {
     /// Settles on a page with Arc's critically damped spring (LibrarySwipe.response 0.205 s, damping ratio 1),
     /// which picks up the release speed.
     private func settle(index: Int, from x: CGFloat) {
+        // Reduce motion: the fingers were followed 1:1; after the release the space dissolves in instead of gliding.
+        if window != nil, case .crossfade(let d) = ReducedMotion.now(.slide) {
+            pendingVelocity = 0
+            stopSpring()
+            dissolveNextChange(d)
+            finishSpring()
+            return
+        }
         // CASpringAnimation's initialVelocity: the distance to travel per second.
         spring = Spring(index: index, clock: SettleClock(started: CACurrentMediaTime()), x0: x, v0: -CGFloat(pendingVelocity) * x)
         pendingVelocity = 0

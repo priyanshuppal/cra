@@ -34,7 +34,8 @@ enum SidebarPlusMark {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.transform = CATransform3DMakeRotation(angle, 0, 0, 1)
-        if animated { layer.add(spring(from: from, to: angle), forKey: "turn") } else { layer.removeAnimation(forKey: "turn") }
+        // Reduce motion: the + turns into the × at once.
+        if animated, ReducedMotion.now(.spring, contentChanges: false).plays { layer.add(spring(from: from, to: angle), forKey: "turn") } else { layer.removeAnimation(forKey: "turn") }
         CATransaction.commit()
     }
 }
@@ -77,6 +78,8 @@ enum ArcMenuMotion {
         var small = CATransform3DMakeTranslation(x, y, 0)
         small = CATransform3DScale(small, 0.95, 0.95, 1)
         small = CATransform3DTranslate(small, -x, -y, 0)
+        // Reduce motion keeps the fade and drops the scale.
+        if !ReducedMotion.now(.zoom).plays { small = CATransform3DIdentity }
         let oldScale = layer.animation(forKey: "creationMenuTransform") as? CABasicAnimation
         let oldFade = layer.animation(forKey: "creationMenuOpacity") as? CABasicAnimation
         let presented = layer.presentation()

@@ -428,6 +428,18 @@ final class ShinyToast {
 
     private func springIn() {
         guard isShown else { return }
+        // Reduce motion: the pill fades in at its size instead of springing out of a small one.
+        if case .crossfade(let d) = ReducedMotion.now(.spring) {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = d
+            fade.beginTime = CACurrentMediaTime() + 0.03
+            fade.fillMode = .backwards
+            pill.add(fade, forKey: "appear")
+            setOpacity(1)
+            return
+        }
         let spring = CASpringAnimation(keyPath: "transform.scale")
         spring.fromValue = 0.4
         spring.toValue = 1
@@ -445,6 +457,7 @@ final class ShinyToast {
     }
 
     private func pulse() {
+        guard ReducedMotion.now(.bounce).plays else { return }
         let bump = CAKeyframeAnimation(keyPath: "transform.scale")
         bump.values = [1, 1.044, 1]
         bump.keyTimes = [0, 0.2, 1]
@@ -484,7 +497,8 @@ final class ShinyToast {
         fade.fromValue = 1
         fade.toValue = 0
         let group = CAAnimationGroup()
-        group.animations = [shrink, fade]
+        // Reduce motion keeps the fade and drops the shrink.
+        group.animations = ReducedMotion.now(.zoom).plays ? [shrink, fade] : [fade]
         group.duration = 0.08
         pill.add(group, forKey: "fade")
         setOpacity(0)

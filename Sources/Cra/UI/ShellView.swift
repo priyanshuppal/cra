@@ -1337,6 +1337,15 @@ final class ShellView: NSView {
     /// floating sidebar docking in place rides on this slide, so both move on one clock.
     func animateSidebar(visible: Bool, floating: Bool, fullscreen: Bool, width: CGFloat, duration: TimeInterval = SidebarMotion.duration,
                         alongside: ((Double) -> Void)? = nil, completion: (() -> Void)? = nil) {
+        // Reduce motion: the sidebar and page don't travel; the window dissolves from the old layout to the new, no
+        // slower than the slide would have been.
+        var duration = duration
+        if duration > 0, case .crossfade(let dissolve) = ReducedMotion.now(.slide) {
+            let fade = min(dissolve, duration)
+            duration = 0
+            dissolveNextChange(fade)
+            CraLog.note("sidebar slide: dissolved in \(Int((fade * 1000).rounded())) ms (reduce motion)")
+        }
         // A slide still running is replaced: what rode along with it finishes now, once, after its readout, so a
         // dock that ends this way still says how far the page moved (on a slow machine the next slide came first,
         // and sidebar-dock-floating's "page moved 0 pt" went missing).
