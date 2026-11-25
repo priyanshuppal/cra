@@ -36,7 +36,8 @@ final class SiteIconLoader {
     /// while it reads the cache. `done` runs when that fetch ends, stored or not.
     func want(_ row: SiteIconQueue.Row, into cache: FaviconCache, done: (() -> Void)? = nil) {
         self.cache = cache
-        guard queue.want(row) else { return }
+        // On its way from disk (FaviconCache.prefetch): a row asks again if it isn't there.
+        guard !cache.isLoading(row.iconKey), queue.want(row) else { return }
         if let done, let host = FaviconKey.key(for: row.url) { waiting[host, default: []].append(done) }
         guard !pumpQueued else { return }
         pumpQueued = true
