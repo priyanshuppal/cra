@@ -1367,8 +1367,7 @@ final class ShellView: NSView {
         animatingFrames = true
         // Arc 1.172.1's ⌘S at 60 fps (CraCore SidebarMotion): about 43 / 72 / 89 / 97 % of the travel
         // after frames 1–4.
-        let c = SidebarMotion.curve
-        let timing = CAMediaTimingFunction(controlPoints: Float(c.0), Float(c.1), Float(c.2), Float(c.3))
+        let timing = CAMediaTimingFunction(bezier: SidebarMotion.curve)
         if freeze { onAnimatePaneFrames?(webTargets, duration, timing) }
         // Real frames each display frame: a layer animation left the toolbar and page at their final size.
         sidebarSlide = SidebarSlide(fromSidebar: sidebarHost.frame, toSidebar: target.sidebar, fromContent: contentContainer.frame,
@@ -1570,4 +1569,11 @@ final class DevToolsResizeHandle: NSView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
     override func mouseDragged(with event: NSEvent) { onDrag?(event.deltaX) }
     override func hitTest(_ point: NSPoint) -> NSView? { bounds.contains(convert(point, from: superview)) ? self : nil }
+}
+
+extension CAMediaTimingFunction {
+    /// A CraCore cubic Bézier's control points (SidebarMotion.curve) as a timing function.
+    convenience init(bezier c: (Double, Double, Double, Double)) {
+        self.init(controlPoints: Float(c.0), Float(c.1), Float(c.2), Float(c.3))
+    }
 }

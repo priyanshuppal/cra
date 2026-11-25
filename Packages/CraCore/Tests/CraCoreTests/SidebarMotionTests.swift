@@ -30,4 +30,9 @@ struct SidebarMotionTests {
         #expect(SidebarMotion.progress(at: 5.0 / 60) > 0.97)
         #expect(SidebarMotion.progress(at: 1) > 1 - 1e-9)
     }
+
+    @Test func trafficLightsFadeWithTheSlide() {
+        #expect(SidebarMotion.buttonsFade.duration == SidebarMotion.duration)
+        #expect(SidebarMotion.buttonsFade.curve == SidebarMotion.curve)
+    }
 }
