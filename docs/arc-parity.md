@@ -526,7 +526,8 @@ intensity slider dragged end to end (CraCore `SpaceStyleControls`; the app's `Wa
   ✓Two Minutes Before / Five / Ten. Arc's LiveCalendarClient (a hidden browser) says "Failed to update" for a calendar
   with events, so its event blocks, countdown and meeting link couldn't be seen: Cra's are its own, in the card's style.
   Cra reads the primary calendar the way Google's Calendar embed does (a hidden `calendar/u/<n>/embed` page asks the
-  Calendar API through the page's own signed-in client), every 5 minutes and on hover when older than a minute.
+  Calendar API through the page's own signed-in client), every 5 minutes while Cra is in use (the active app with a
+  window on screen; on coming forward when older than that) and on hover when older than a minute.
 
 ## Library, measured (Arc 1.172.1, Victor's Arc, 8 Nov 2026)
 

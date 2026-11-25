@@ -2536,6 +2536,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 return
             }
             if dict["calendarTick"] != nil { NotificationCenter.default.post(name: LiveCalendarClient.changed, object: nil); return }
+            // liveCalendar=<label>: whether the 30 s tick runs, what began the last read of a Calendar favorite and how many
+            // began; liveCalendarAge=<s> makes every read as old as that; liveCalendarTick=1 runs the tick at once.
+            if let label = dict["liveCalendar"] {
+                CraLog.note("live calendar \(label): \(LiveCalendarClient.shared.debugState) active=\(NSApp.isActive ? 1 : 0)")
+                return
+            }
+            if let age = dict["liveCalendarAge"].flatMap(TimeInterval.init) { LiveCalendarClient.shared.debugBackdate(age); return }
+            if dict["liveCalendarTick"] != nil { LiveCalendarClient.shared.tickFired(); return }
             if let label = dict["meetingCard"] {
                 let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
                 let mainOver = main.window.map { String(LittleWindowRaise.othersOver($0.windowNumber, in: info)) } ?? "-"

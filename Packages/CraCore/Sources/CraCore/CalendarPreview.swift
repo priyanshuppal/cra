@@ -254,4 +254,23 @@ public enum CalendarPreview {
         if s < 3600 { return "Last fetch: \(s / 60) min ago" }
         return "Last fetch: \(s / 3600) h ago"
     }
+
+    // MARK: Reading again
+
+    /// How often a watched favorite's events are read again, and how stale they may be when Cra
+    /// comes forward.
+    public static let refreshInterval: TimeInterval = 300
+
+    /// Whether the 30 s tick (or Cra coming forward) reads the calendar again. Each read starts a
+    /// hidden Chrome page (a renderer, Google Calendar's scripts, the network), so it happens only
+    /// while Cra is the active app with a window on screen, every `refreshInterval`; behind
+    /// another app, hidden or with the display asleep the events wait until Cra is used again.
+    /// A hover, Refresh and Join next video conference still read on demand
+    /// (LiveCalendarClient.refresh). `lastFetch` is the last read begun, answered or not, so a
+    /// calendar that fails isn't asked every tick.
+    public static func refreshDue(lastFetch: Date?, now: Date, appActive: Bool, onScreen: Bool) -> Bool {
+        guard appActive, onScreen else { return false }
+        guard let lastFetch else { return true }
+        return now.timeIntervalSince(lastFetch) >= refreshInterval
+    }
 }

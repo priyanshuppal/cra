@@ -127,4 +127,36 @@ struct CalendarPreviewTests {
         #expect(js.contains("calendars/primary/events"))
         #expect(js.contains("2026-11-08T00:00:00Z"))
     }
+
+    // Reading again: only while Cra is in use, every 5 minutes (energy: each read is a hidden Chrome page).
+
+    @Test func refreshWaitsWhileInactive() {
+        let stale = Self.at(9).addingTimeInterval(-3600)
+        for (active, onScreen) in [(false, true), (true, false), (false, false)] {
+            #expect(!CalendarPreview.refreshDue(lastFetch: stale, now: Self.at(9), appActive: active, onScreen: onScreen))
+            #expect(!CalendarPreview.refreshDue(lastFetch: nil, now: Self.at(9), appActive: active, onScreen: onScreen))
+        }
+    }
+
+    @Test func refreshOnActivationWhenStale() {
+        let cases: [(age: TimeInterval?, due: Bool)] = [(nil, true), (30, false), (299, false), (300, true), (3600, true)]
+        for c in cases {
+            let last = c.age.map { Self.at(9).addingTimeInterval(-$0) }
+            #expect(CalendarPreview.refreshDue(lastFetch: last, now: Self.at(9), appActive: true, onScreen: true) == c.due, "age \(String(describing: c.age))")
+        }
+    }
+
+    @Test func refreshAtCadenceWhileActive() {
+        // The 30 s tick over 15 minutes, read at 0: again at 5 and 10 minutes, as before.
+        var last = Self.at(9)
+        var reads: [Int] = []
+        for tick in 1...30 {
+            let now = Self.at(9).addingTimeInterval(TimeInterval(tick * 30))
+            if CalendarPreview.refreshDue(lastFetch: last, now: now, appActive: true, onScreen: true) {
+                reads.append(tick * 30)
+                last = now
+            }
+        }
+        #expect(reads == [300, 600, 900])
+    }
 }
