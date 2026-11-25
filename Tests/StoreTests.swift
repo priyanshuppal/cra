@@ -124,6 +124,7 @@ enum StoreTests {
         duplicateFavoritesAndSplits()
         windowsShareTheSidebar()
         clearTodayArchivesInOnePass()
+        plainPickMovesNoRevision()
         settingsSync()
         syncLeavesBlankWindowsOnTheirMac()
         blankWindows()
@@ -3822,6 +3823,31 @@ enum StoreTests {
         store.removeWindow(second)
         expect(store.item(tab.id) != nil && store.item(made.id) != nil, "closing a window keeps the tabs")
         expect(store.integrityProblems().isEmpty, "and the sidebar stays sound")
+    }
+
+    /// A plain pick changes only its window's session, which each window reads through its
+    /// WindowRefreshKey: it moves no revision, so another window doesn't refresh for it. A pick that
+    /// follows a tree edit (a new tab, a pane, a restored tab) still moves it once, with the edit.
+    @MainActor
+    private static func plainPickMovesNoRevision() {
+        let store = SidebarStore(clock: ManualScheduler())
+        let one = store.createTab(url: "https://example.com/pick/one").id
+        let two = store.createTab(url: "https://example.com/pick/two").id
+        var before = store.revision
+        store.selectTab(one)
+        expect(store.revision == before && store.selectedTabID == one, "a plain pick selects the tab and moves no revision, moved \(store.revision - before)")
+        before = store.revision
+        let made = store.createTab(url: "https://example.com/pick/three").id
+        expect(store.revision != before && store.selectedTabID == made, "a new tab, picked, moves the revision")
+        before = store.revision
+        guard let pane = store.addEmptyPane(nextTo: two) else { return expect(false, "a pane is added") }
+        expect(store.revision != before && store.selectedTabID == pane.id, "a pane added, picked, moves the revision")
+        before = store.revision
+        store.selectTab(pane.id)
+        expect(store.revision != before, "the tab already shown, picked again, still moves it: its window may have to show its page")
+        before = store.revision
+        store.selectTab(nil)
+        expect(store.revision != before && store.selectedTabID == nil, "no tab picked still moves it, as before")
     }
 
     // promise: #614

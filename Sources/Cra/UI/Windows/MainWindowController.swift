@@ -634,25 +634,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
 
     // MARK: Observation
 
+    /// What refresh reads from the store and the app. Another window's pick, a window moved or a
+    /// folder opened changes `prefs` but not this, so this window's refresh (about 8 ms) doesn't run for it.
+    private struct RefreshInputs: Equatable {
+        var key: WindowRefreshKey
+        var settings: AppSettings
+        var spaces: [UUID: Space]
+        var isDark: Bool
+        var modelAvailable: Bool
+    }
+
+    /// Calls to refresh, for `cra://debug?refreshCount` (read and reset there).
+    var refreshCount = 0
+
     private func observeStore() {
-        guard !isTornDown else { return }
-        withObservationTracking {
-            _ = store.revision
-            _ = store.prefs
-            _ = store.settings
-            _ = TidyTabsService.shared.modelAvailable
-            _ = store.spaces
-            _ = SystemAppearance.shared.isDark
-            _ = TidyTabsService.shared.modelAvailable
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.refresh()
-                self?.observeStore()
-            }
+        var primed = false
+        observeChanges(of: { [weak self] () -> RefreshInputs? in
+            guard let self, !self.isTornDown else { return nil }
+            let store = self.store
+            return RefreshInputs(
+                key: WindowRefreshKey(window: windowID, prefs: store.prefs, revision: store.revision,
+                                      panes: { store.visiblePaneTabIDs(in: store.focusedSpaceID(window: $0.id), window: $0.id) }),
+                settings: store.settings, spaces: store.spaces, isDark: SystemAppearance.shared.isDark,
+                modelAvailable: TidyTabsService.shared.modelAvailable)
+        }) { [weak self] inputs in
+            // The first reading is the window as it opens; init refreshes it right after.
+            defer { primed = true }
+            guard primed, inputs != nil else { return }
+            self?.refresh()
         }
     }
 
     func refresh() {
+        refreshCount += 1
         LinkSummaryPreviewController.shared.validate(windowID: windowID)
         guard !isTornDown, !isPutAway else { return }
         let space = focusedSpace
@@ -751,6 +765,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         syncPeeks(onScreen: panes)
         syncRingPanel()
         syncSidebarUI()
+        // Every window's sidebar marks the tabs loaded, playing or shared in any window. A pick here no
+        // longer refreshes the other windows (WindowRefreshKey), so only their marks are brought up to date.
+        for other in app.mainWindows where other !== self && !other.isTornDown && !other.isPutAway { other.syncSidebarUI() }
         window?.title = selectedTab?.displayTitle ?? space.title
 
         // Another space came to the front (a shortcut, the menu) while one was being made: the page goes.

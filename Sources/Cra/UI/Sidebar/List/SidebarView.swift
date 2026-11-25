@@ -180,19 +180,34 @@ final class SidebarView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// What the column's look and layout read from the store. The focused space goes through the window
+    /// list, which every pick in any window writes: only a change here lays the sidebar out again.
+    private struct Observed: Equatable {
+        var space: Space
+        var isDark: Bool
+        var tint: NowPlayingTint
+        var glass: Bool
+        var bannerHeight: CGFloat
+        var library: LibraryPage?
+        var trayOpen: Bool
+        var recentCount: Int
+    }
+
     private func observe() {
-        var bannerHeight: CGFloat = 0
-        let (space, library, trayOpen, recentCount) = withObservationTracking {
-            let space = store.focusedSpace(window: ui.windowID)
-            _ = SystemAppearance.shared.isDark
-            _ = store.settings.nowPlayingTint
-            _ = SidebarGlassSetting.shared.isOn
-            bannerHeight = UpdateBannerView.preferredHeight
-            return (space, ui.libraryPage, ui.downloadsListOpen, DownloadHistory.shared.recent.count)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observe() }
+        observeChanges(of: { [weak self] () -> Observed? in
+            guard let self else { return nil }
+            return Observed(space: store.focusedSpace(window: ui.windowID), isDark: SystemAppearance.shared.isDark,
+                            tint: store.settings.nowPlayingTint, glass: SidebarGlassSetting.shared.isOn,
+                            bannerHeight: UpdateBannerView.preferredHeight, library: ui.libraryPage,
+                            trayOpen: ui.downloadsListOpen, recentCount: DownloadHistory.shared.recent.count)
+        }) { [weak self] observed in
+            if let observed { self?.apply(observed) }
         }
-        let playerLook = (tint: store.settings.nowPlayingTint, glass: SidebarGlassSetting.shared.isOn)
+    }
+
+    private func apply(_ observed: Observed) {
+        let space = observed.space, bannerHeight = observed.bannerHeight
+        let playerLook = (tint: observed.tint, glass: observed.glass)
         let paletteChanged = lastSpaceID == nil || space.theme.shown != shownTheme || space.id != lastSpaceID
             || shownPlayerLook.map { $0 != playerLook } ?? true
         shownTheme = space.theme.shown
@@ -216,8 +231,8 @@ final class SidebarView: NSView {
             newSpacePlus.ink = colors.textPrimary
         }
         self.bannerHeight = bannerHeight
-        updateTrayMask(open: trayOpen, rows: recentCount)
-        showLibrary(library)
+        updateTrayMask(open: observed.trayOpen, rows: observed.recentCount)
+        showLibrary(observed.library)
         needsLayout = true
     }
 

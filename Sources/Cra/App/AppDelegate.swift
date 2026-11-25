@@ -2634,6 +2634,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 CraLog.note("peek close \(label): \(peek.peekCloseReadout())")
                 return
             }
+            // refreshCount=<label>: how often each window's refresh ran since the last reading, the window
+            // in use and then the others; a pick in one window leaves the others' alone (WindowRefreshKey).
+            if let label = dict["refreshCount"] {
+                let active = mainWindows.first { $0.windowID == store.activeWindowID }?.refreshCount ?? 0
+                let others = mainWindows.filter { $0.windowID != store.activeWindowID }.map { String($0.refreshCount) }
+                CraLog.note("refresh count \(label): active=\(active) others=\(others.isEmpty ? "-" : others.joined(separator: ","))")
+                for m in mainWindows { m.refreshCount = 0 }
+                return
+            }
             // peeks=<label>: each window's Peeks, on screen or waiting on their tab, and their pages (#242).
             if let label = dict["peeks"] {
                 for m in mainWindows { NSLog("Cra peeks %@: %@", label, m.peeksShown()) }
