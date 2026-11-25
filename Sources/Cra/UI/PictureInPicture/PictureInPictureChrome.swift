@@ -932,6 +932,9 @@ final class PictureInPictureOverlayView: NSView {
         let frame = p.magnify(by: magnification, minSize: minSize, maxSize: limits.max, visible: visible)
         if p.scale != 1, pinch?.scale == 1 { CraLog.note("pip: pinch from \(Self.size(p.startFrame))") }
         pinch = p
+        // Arc's tick as the fingers pass the smallest or largest size (an alignment haptic, at
+        // AppKit's default time), with no setting of its own.
+        if p.passedLimit { Haptics.play(.alignment, at: .default) }
         guard frame != target.frame else { return }
         give(frame, to: target)
     }

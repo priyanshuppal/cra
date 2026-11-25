@@ -10,6 +10,13 @@ public struct PictureInPicturePinch: Sendable {
     public let startFrame: CGRect
     /// How much larger the fingers have made the window so far: 1 at the start, 2 twice as wide.
     public private(set) var scale: CGFloat = 1
+    /// The last event took the fingers past the smallest or largest size from inside them: Arc's
+    /// tick (an alignment haptic, Arc 1.174.3's MovableWindowContentView magnify handler). Once
+    /// per crossing: fingers that go on past the limit, or come back inside, don't tick again
+    /// until they pass it anew.
+    public private(set) var passedLimit = false
+    /// Which limit the fingers are past, if either: -1 the smallest, 1 the largest.
+    private var pastLimit = 0
 
     /// The fingers touched down on a window at `frame`.
     public init(frame: CGRect) {
@@ -31,6 +38,11 @@ public struct PictureInPicturePinch: Sendable {
         let lo = max(minSize.width, minSize.height * aspect)
         let hi = max(lo, min(maxSize.width, maxSize.height * aspect, roomW, roomH * aspect))
         if magnification.isFinite { scale *= max(1 + magnification, 0.01) }
+        // Arc compares the fingers' scale with the limits before stopping it there: below the
+        // smallest is -1, above the largest 1, inside 0; resting exactly on one keeps what it was.
+        let past = scale < lo / s.width ? -1 : scale > hi / s.width ? 1 : scale == lo / s.width || scale == hi / s.width ? pastLimit : 0
+        passedLimit = past != 0 && past != pastLimit
+        pastLimit = past
         scale = min(max(scale, lo / s.width), hi / s.width)
         let w = (s.width * scale).rounded(), h = (w / aspect).rounded()
         // Around the centre, then back inside the room: a window in a corner keeps its corner.
