@@ -49,7 +49,8 @@ enum DownloadFlight {
         icon.opacity = 0
         view.layer?.addSublayer(icon)
 
-        let samples = 66
+        // Exact points on the path, linear between: 240 a second keeps the corners under a 120 Hz frame.
+        let samples = max(66, Int((path.duration * 240).rounded(.up)))
         var positions: [NSValue] = [], transforms: [NSValue] = [], opacities: [NSNumber] = [], times: [NSNumber] = []
         for i in 0...samples {
             let p = CGFloat(i) / CGFloat(samples)
