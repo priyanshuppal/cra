@@ -22,8 +22,8 @@ import Testing
         w.focusedSpaceID.flatMap { w.selectedTabPerSpace[$0] }.map { [$0] } ?? []
     }
 
-    func key(_ p: WindowPrefs, revision: Int = 0) -> WindowRefreshKey {
-        WindowRefreshKey(window: a, prefs: p, revision: revision, panes: Self.panes)
+    func key(_ p: WindowPrefs, revision: Int = 0, makingSpace: Bool = false) -> WindowRefreshKey {
+        WindowRefreshKey(window: a, prefs: p, revision: revision, makingSpace: makingSpace, panes: Self.panes)
     }
 
     func session(_ p: inout WindowPrefs, _ id: UUID, _ change: (inout WindowSession) -> Void) {
@@ -68,6 +68,16 @@ import Testing
         #expect(key(p, revision: revision) != key(prefs), "\(change) must refresh window A")
     }
 
+    /// Opening Create a Space, and leaving it, refreshes the window though its session and the spaces
+    /// may read the same: the new space can preview the theme its space already has (1 in 9), and the
+    /// old space's page stayed up.
+    @Test func makingSpaceInAndOut() {
+        let before = key(prefs), making = key(prefs, makingSpace: true), after = key(prefs)
+        #expect(making != before, "opening Create a Space must refresh window A")
+        #expect(after != making, "and so must leaving it")
+        #expect(after == before, "with nothing else changed, leaving is the flag alone")
+    }
+
     /// Another window leaving a tab this window shows refreshes this one too: it may hold the page now.
     @Test func anotherWindowLeavingItsTab() {
         var shared = prefs
@@ -81,7 +91,7 @@ import Testing
 
     /// A window that is gone (closed while a change was on its way) has no session, and nothing it shares.
     @Test func windowGone() {
-        let k = WindowRefreshKey(window: UUID(), prefs: prefs, revision: 0, panes: Self.panes)
+        let k = WindowRefreshKey(window: UUID(), prefs: prefs, revision: 0, makingSpace: false, panes: Self.panes)
         #expect(k.session == nil)
         #expect(k.sharedPanes.isEmpty)
     }
