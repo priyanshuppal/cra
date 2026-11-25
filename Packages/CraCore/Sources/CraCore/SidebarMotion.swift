@@ -8,6 +8,9 @@ public enum SidebarMotion {
     public static let duration: TimeInterval = 0.085
     /// The cubic Bézier's control points (CAMediaTimingFunction), fitted to those frames.
     public static let curve: (Double, Double, Double, Double) = (0.3, 0.7, 0.5, 1)
+    /// The window's traffic lights fade out and back on ⌘S with the slide under them, on its clock and curve,
+    /// so the two can't drift apart (they had faded on NSAnimationContext's default timing).
+    public static var buttonsFade: (duration: TimeInterval, curve: (Double, Double, Double, Double)) { (duration, curve) }
 
     /// The share of the travel done `t` seconds in.
     public static func progress(at t: TimeInterval, curve c: (Double, Double, Double, Double) = curve, duration: TimeInterval = duration) -> Double {

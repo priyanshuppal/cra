@@ -6621,9 +6621,11 @@ final class CraWindow: NSWindow {
             parkTrafficLights(false)
             for b in buttons where b.isHidden { b.alphaValue = 0; b.isHidden = false }
         }
-        // Same timing as the sidebar's slide (ShellView.animateSidebar).
+        // The sidebar's slide's duration and curve (ShellView.animateSidebar), from one place in CraCore.
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.085
+            let fade = SidebarMotion.buttonsFade
+            ctx.duration = fade.duration
+            ctx.timingFunction = CAMediaTimingFunction(bezier: fade.curve)
             for b in buttons { b.animator().alphaValue = hide ? 0 : 1 }
         } completionHandler: { [weak self] in
             guard let self, self.appliedTrafficLightsHidden == hide else { return }
