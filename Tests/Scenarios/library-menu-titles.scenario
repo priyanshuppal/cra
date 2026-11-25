@@ -1,0 +1,25 @@
+# Window ▸ Open Library… and View Downloads… say what they will do, as Arc's do: Close Library and Hide
+# Downloads while the Library shows Downloads; on another page only Open Library… flips, since View
+# Downloads… then goes to Downloads. Closed again, both read as before.
+budget rss=600 stalls50=10
+wait 1
+cra://debug?menuRows=Window&label=closed
+expect-log menu rows closed: .*\|Open Library…\|View Downloads…\|
+cra://action/viewDownloads
+wait 1
+cra://debug?libraryShown=downloads
+expect-log library shown downloads: downloads
+cra://debug?menuRows=Window&label=downloads
+expect-log menu rows downloads: .*\|Close Library\|Hide Downloads\|
+cra://action/viewMedia
+wait 1
+cra://debug?menuRows=Window&label=media
+expect-log menu rows media: .*\|Close Library\|View Downloads…\|
+cra://action/viewDownloads
+wait 1
+cra://action/viewDownloads
+wait 1
+cra://debug?libraryShown=closed
+expect-log library shown closed: closed
+cra://debug?menuRows=Window&label=again
+expect-log menu rows again: .*\|Open Library…\|View Downloads…\|

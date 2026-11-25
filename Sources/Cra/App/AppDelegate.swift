@@ -3465,10 +3465,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "toggleSidebar": return main.sidebarVisible ? "Hide Sidebar" : "Show Sidebar"
         case "toggleToolbar": return store.settings.showToolbar ? "Hide Toolbar" : "Show Toolbar"
         case "collapsePinned": return store.isPinnedCollapsed(main.focusedSpaceID) ? "Expand Pinned Tabs" : "Collapse Pinned Tabs"
+        // Close Library and Hide Downloads while the main window's Library is on them (MenuBarTitles).
+        case "openLibrary": return MenuBarTitles.library(row: .openLibrary, openPage: main.sidebarUI.libraryPage, downloads: .downloads)
+        case "viewDownloads": return MenuBarTitles.library(row: .viewDownloads, openPage: main.sidebarUI.libraryPage, downloads: .downloads)
         default: return nil
         }
     }
-    private static let flippingRows = ["toggleSidebar", "toggleToolbar", "collapsePinned"]
+    private static let flippingRows = ["toggleSidebar", "toggleToolbar", "collapsePinned", "openLibrary", "viewDownloads"]
 
     /// System Settings ▸ Keyboard ▸ App Shortcuts names a menu row by its title, and AppKit looks a
     /// key up among the titles the menu bar has at that moment, before it validates the row. So a
