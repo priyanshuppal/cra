@@ -1293,7 +1293,7 @@ final class SpaceListView: NSView, NSDraggingSource {
             // A tick when a row starts offering to combine, so the change of meaning is felt as well as seen.
             switch drop.target {
             case .split?:
-                if store.settings.hapticFeedbackOnReorder { NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now) }
+                if store.settings.hapticFeedbackOnReorder { Haptics.play(.generic) }
             default: break
             }
             // A closed folder stays closed under a drag: Arc 1.172 only highlights its row, however
@@ -1333,7 +1333,7 @@ final class SpaceListView: NSView, NSDraggingSource {
         }
         // Dia: Tabs ▸ "Haptic feedback when reordering tabs".
         if drop.target != nil, store.settings.hapticFeedbackOnReorder {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .drawCompleted)
+            Haptics.play(.alignment, at: .drawCompleted)
         }
         ui.draggingID = nil
         return true

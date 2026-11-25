@@ -2974,6 +2974,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
                 return
             }
+            // haptics=<label>: "Cra haptics <label>: generic=<n> alignment=<n> levelChange=<n>", every one played
+            // since launch or since haptics=reset.
+            if let label = dict["haptics"] {
+                if label == "reset" { Haptics.reset() } else { NSLog("Cra haptics %@: %@", label, Haptics.readout) }
+                return
+            }
             if dict["jumpPill"] != nil { SpaceListView.jumpToSelected(for: main.sidebarUI, space: store.focusedSpaceID); return }
             // The open folder preview: the pointer resting on a row, the list scrolled under it, and
             // "Cra folderPreview <label>: lit=<rows> top=<pt>", the rows with the pointer's highlight and how far

@@ -315,7 +315,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
             }
             shell.layoutSubtreeIfNeeded()
             if resize.isSnapped, !wasSnapped {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                Haptics.play(.alignment)
             }
         }
         shell.resizeHandle.onEnd = { [weak self] in
@@ -3788,7 +3788,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     }
 
     private func performSwipeHaptic() {
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Haptics.play(.alignment)
     }
 
     // MARK: Swiping into the Library (LibrarySwipe)
@@ -4216,7 +4216,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         let was = NewSpaceSwipe.isActivated(overscroll: sidebarUI.newSpacePull)
         let full = NewSpaceSwipe.isActivated(overscroll: overscroll)
         sidebarUI.newSpacePull = overscroll
-        if full != was { NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now) }
+        if full != was { Haptics.play(.generic) }
         if !full { newSpaceFullSince = nil } else if newSpaceFullSince == nil { newSpaceFullSince = CACurrentMediaTime() }
     }
 

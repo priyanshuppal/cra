@@ -19,8 +19,12 @@ expect-log theme editor intensity 0\.92: ticks \+1
 # The dial's steps are twice as far apart.
 cra://debug?themeEditor=noise:0.25
 wait 0.5
+cra://debug?haptics=reset
 cra://debug?themeEditor=noise:0.35
 expect-log theme editor noise 0\.35: ticks \+0
 cra://debug?themeEditor=noise:0.45
 expect-log theme editor noise 0\.45: ticks \+1
+# The dial's tick, counted by the one counter every haptic goes through.
+cra://debug?haptics=theme
+expect-log Cra haptics theme: generic=1 alignment=0
 cra://dismiss
