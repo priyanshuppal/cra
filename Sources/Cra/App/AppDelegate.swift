@@ -1445,7 +1445,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                         : dict["target"] == "find" ? main.debugFindPanel
                         : dict["target"] == "littleFind" ? littleWindows.last?.finder.debugPanel : main.openCommandPanel
                     // source=keyboard: typed on the keyboard (source process 0), not posted by an app as a mouse driver does (#714).
-                    TestGesture.key(String(k[0]), keyCode: code, modifiers: flags, in: target ?? w, fromKeyboard: dict["source"] == "keyboard")
+                    // repeat=1&age=<ms>: one repeat of the key held down, made that long ago (KeyRepeatGate).
+                    let repeatAge: TimeInterval? = dict["repeat"] == "1" ? Double(dict["age"] ?? "0").map { $0 / 1000 } ?? 0 : nil
+                    TestGesture.key(String(k[0]), keyCode: code, modifiers: flags, in: target ?? w, fromKeyboard: dict["source"] == "keyboard",
+                                    repeatAge: repeatAge)
                 }
                 return
             }
@@ -3831,8 +3834,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             takes = priority.takesBeforePage()
         }
         guard takes else { return false }
-        perform(action.id)
+        performKey(event) { perform(action.id) }
         return true
+    }
+
+    /// The key whose command is running. Chromium hands a page's keys back (handleReservedKey,
+    /// handleUnhandledKey) after NSApp.currentEvent has moved on, so the held-key gate reads this.
+    private var keyBeingPerformed: NSEvent?
+
+    private func performKey(_ event: NSEvent, _ body: () -> Void) {
+        let outer = keyBeingPerformed
+        keyBeingPerformed = event
+        defer { keyBeingPerformed = outer }
+        body()
+    }
+
+    /// A held Next/Previous Tab or Space whose repeat queued behind a slow switch (KeyRepeatGate):
+    /// it would play out after the key is let go, loading every tab it passes.
+    private func isStaleRepeat(_ id: String) -> Bool {
+        guard KeyRepeatGate.actions.contains(id), let key = keyBeingPerformed ?? NSApp.currentEvent, key.type == .keyDown else { return false }
+        return !KeyRepeatGate.accepts(isRepeat: key.isARepeat, eventTime: key.timestamp,
+                                      now: ProcessInfo.processInfo.systemUptime, repeatInterval: NSEvent.keyRepeatInterval)
     }
 
     /// Quit, Hide, Hide Others, Minimize and Full Screen, as buildMenus makes them (`beforePage`).
@@ -3924,17 +3946,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // the keys it shows, which AppKit fits to the keyboard layout (Turkish Q: Zoom In ⌘.,
         // Stop ⌘ç, Back ⌘ğ), the way the sidebar's keys go (GitHub #212). ⌃, ⌥ and F-keys too:
         // a System Settings App Shortcut such as ⌃` for Hide/Show Sidebar is a menu key (#253).
-        if !event.modifierFlags.intersection([.command, .control, .option, .function]).isEmpty,
-           let window = event.window ?? NSApp.keyWindow,
-           !window.responds(to: NSSelectorFromString("commandDispatcher")),
-           NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
-            return true
+        var handled = false
+        performKey(event) {
+            if !event.modifierFlags.intersection([.command, .control, .option, .function]).isEmpty,
+               let window = event.window ?? NSApp.keyWindow,
+               !window.responds(to: NSSelectorFromString("commandDispatcher")),
+               NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
+                handled = true
+            } else if let action = bindings.action(for: event) {
+                perform(action.id)
+                handled = true
+            }
         }
-        if let action = bindings.action(for: event) {
-            perform(action.id)
-            return true
-        }
-        return false
+        return handled
     }
 
     /// Arc: ⌘Z brings back the tab you closed last (closing registers an undo, GitHub #21), or undoes
@@ -3973,6 +3997,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // A Use Both press the page left alone comes back by OnKeyEvent or, redispatched by Chromium,
         // through the menu bar: either way it ends here, so the page didn't keep it (#374).
         useBoth.pageLeft(id)
+        if isStaleRepeat(id) { return }
         // A Tabs row dimmed in the menu does nothing from its shortcut or the command bar either, and
         // isn't counted as used (#622).
         if tabsMenuState(id)?.enabled == false { return }

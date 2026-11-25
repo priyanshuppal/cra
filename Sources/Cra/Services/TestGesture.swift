@@ -114,11 +114,16 @@ enum TestGesture {
         return NSEvent(cgEvent: c) ?? e
     }
 
-    static func key(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags, in window: NSWindow, fromKeyboard: Bool = false) {
-        for type in [NSEvent.EventType.keyDown, .keyUp] {
-            guard let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
+    /// `repeatAge`: instead of a press, one key repeat of a held key, made that many seconds ago, as one
+    /// that queued behind a slow tab switch reaches the app (KeyRepeatGate).
+    static func key(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags, in window: NSWindow, fromKeyboard: Bool = false,
+                    repeatAge: TimeInterval? = nil) {
+        let types: [NSEvent.EventType] = repeatAge == nil ? [.keyDown, .keyUp] : [.keyDown]
+        let made = ProcessInfo.processInfo.systemUptime - (repeatAge ?? 0)
+        for type in types {
+            guard let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers, timestamp: made,
                                            windowNumber: window.windowNumber, context: nil, characters: characters,
-                                           charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode) else { return }
+                                           charactersIgnoringModifiers: characters, isARepeat: repeatAge != nil, keyCode: keyCode) else { return }
             NSApp.postEvent(asTyped(e, fromKeyboard: fromKeyboard), atStart: false)
         }
     }
