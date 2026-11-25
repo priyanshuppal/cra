@@ -127,6 +127,7 @@ enum BrowserManagerLifecycleTests {
         downloadSourceAdoptionCase()
         fullscreenTabClosedCase()
         await sparePagesCase()
+        await sparePagesPressureCase()
         await tabFaviconsCase()
         let store = SidebarStore()
         let manager = BrowserManager(store: store, favicons: FaviconCache(), container: NSView())
@@ -1333,6 +1334,50 @@ enum BrowserManagerLifecycleTests {
         spare?.close()
         manager.closeAll()
         SparePages.shared.dropAll()
+    }
+
+    /// Spares and memory: none is made while macOS reports pressure, one comes back once it reads
+    /// normal, and only the profile that made a page last keeps one.
+    @MainActor
+    private static func sparePagesPressureCase() async {
+        SparePages.shared.dropAll()
+        var pressure = PerfSystemSample.Pressure.warning
+        SparePages.shared.mayMake = { SparePage.keeps(pressure: pressure) }
+        let clock = ManualScheduler()
+        let store = SidebarStore()
+        let manager = BrowserManager(store: store, favicons: FaviconCache(), container: NSView(), clock: clock)
+        _ = manager.ensureRuntime(for: store.createTab(url: "https://example.test/one").id)
+        clock.advance(by: SparePage.refillDelay)
+        expect(SparePages.shared.take(profilePath: nil) == nil, "no spare is made while memory is short")
+        let two = manager.ensureRuntime(for: store.createTab(url: "https://example.test/two").id)!
+        expect(two.browser.takenURL == nil, "the next tab makes its own page")
+        pressure = .normal
+        clock.advance(by: SparePage.refillDelay)
+        let back = SparePages.shared.take(profilePath: nil)
+        expect(back?.isSpare == true, "with pressure back to normal, the next refill makes a spare again")
+        back?.close()
+
+        // Two profiles: the Default profile's spare goes when Work's is made.
+        clock.advance(by: SparePage.refillDelay)
+        let work = "/profiles/Work"
+        SparePages.shared.refill(profilePath: nil, frame: .zero, clock: clock)
+        clock.advance(by: SparePage.refillDelay)
+        SparePages.shared.refill(profilePath: work, frame: .zero, clock: clock)
+        clock.advance(by: SparePage.refillDelay)
+        expect(SparePages.shared.take(profilePath: nil) == nil, "another profile's spare goes when one is made for the profile used last")
+        let workSpare = SparePages.shared.take(profilePath: work)
+        expect(workSpare?.isSpare == true, "the profile used last keeps its spare")
+        workSpare?.close()
+
+        // Pressure drops what is kept (AppDelegate.sweepForMemoryPressure).
+        SparePages.shared.refill(profilePath: nil, frame: .zero, clock: clock)
+        clock.advance(by: SparePage.refillDelay)
+        expect(SparePages.shared.dropAll() == 1, "a memory-pressure sweep closes the spare it finds")
+        expect(SparePages.shared.take(profilePath: nil) == nil, "and none is left to take")
+
+        manager.closeAll()
+        SparePages.shared.dropAll()
+        SparePages.shared.mayMake = { true }
     }
 
     // promise: #32

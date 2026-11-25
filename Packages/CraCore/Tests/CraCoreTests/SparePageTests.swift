@@ -12,7 +12,7 @@ struct SparePageTests {
         #expect(!SparePage.canTake(engine: .chromium, isEasel: false, incognito: true))
     }
 
-    @Test func onePerProfile() {
+    @Test func keyedByProfile() {
         #expect(SparePage.key(profilePath: nil) == "")
         #expect(SparePage.key(profilePath: "/p/Work") == "/p/Work")
         #expect(SparePage.key(profilePath: "/p/Work") != SparePage.key(profilePath: nil))
@@ -20,5 +20,24 @@ struct SparePageTests {
 
     @Test func refillsAfterTheClick() {
         #expect(SparePage.refillDelay >= 1)
+    }
+
+    @Test(arguments: [
+        (PerfSystemSample.Pressure.normal, true),
+        (.unknown, true),
+        (.warning, false),
+        (.critical, false),
+    ])
+    func noSpareWhileMemoryIsShort(pressure: PerfSystemSample.Pressure, keeps: Bool) {
+        #expect(SparePage.keeps(pressure: pressure) == keeps)
+    }
+
+    @Test func onlyTheProfileUsedLastKeepsOne() {
+        let work = SparePage.key(profilePath: "/p/Work")
+        let home = SparePage.key(profilePath: nil)
+        #expect(SparePage.dropped(making: work, kept: [home]) == [home])
+        #expect(SparePage.dropped(making: work, kept: [home, work, "/p/School"]) == [home, "/p/School"])
+        #expect(SparePage.dropped(making: work, kept: [work]).isEmpty)
+        #expect(SparePage.dropped(making: home, kept: []).isEmpty)
     }
 }

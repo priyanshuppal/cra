@@ -83,7 +83,9 @@ went up with tabs refreezing every minute).
 - **Spare pages** (`SparePages`, `spare-pages.patch`): a page per profile made ahead; a new tab, a link
   opened in a tab and the first visit to a restored tab take it. Page making 34 → 21 ms on average
   (15 of 26 pages from a spare at a click every 1–2 s), switch to a restored tab's page shown 30 → 12 ms,
-  opening a site 36 → 16 ms. Extensions never see a spare (`spare-pages.scenario`).
+  opening a site 36 → 16 ms. Extensions never see a spare (`spare-pages.scenario`). Since 26 Nov 2026
+  only the profile that made a page last keeps one, and none is kept while macOS reports memory
+  pressure (`SparePage.keeps`, `spare-pages-pressure.scenario`).
 - **Tabs switch on the press**, as Arc 1.173.1 does (checked live): the click's own length, ~90 ms,
   comes off every sidebar switch. Picks, renames and a pinned tab's icon act on the release.
 - **Space switches** no longer ask the window server which window is under the pointer every frame of

@@ -162,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         handoff.start()
         MCPServer.shared.start(app: self)
         composition.startPeriodicWork { [weak self] in self?.sleepIdleTabs() }
+        SparePages.shared.mayMake = { SparePage.keeps(pressure: PerfSystemSample.pressure(level: PerfSystemSampler.pressureLevel())) }
         composition.sync.keybindingsChanged = { [weak self] in self?.bindings.reloadOverrides() }
         composition.sync.start()
         SharingService.shared.start(store: store, clock: composition.clock)
@@ -398,6 +399,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// "Force tabs out of memory when the Mac is short of memory" (GitHub #153): while macOS
     /// reports memory pressure, the pages hidden longest close, a few per sweep, until it doesn't.
     private func sweepForMemoryPressure(_ pressure: PerfSystemSample.Pressure) {
+        // A page made ahead is a renderer nobody asked for: it goes first, whatever the setting.
+        // The next one waits until pressure is back to normal (SparePages.refill).
+        if !SparePage.keeps(pressure: pressure) {
+            let dropped = SparePages.shared.dropAll()
+            if dropped > 0 { CraLog.note("spare pages: dropped \(dropped) for memory pressure \(pressure.rawValue)") }
+        }
         let now = composition.clock.now
         guard TabSleepPolicy.sweepsForPressure(pressure, enabled: store.settings.tabSleepOnMemoryPressure,
                                                lastSweep: lastPressureSweep, now: now) else { return }
@@ -2792,7 +2799,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             if dict["sleep"] != nil { systemWillSleep(); return }
             if dict["wake"] != nil { systemDidWake(); return }
             // One memory-pressure sweep as if macOS reported this level (warning, critical), without
-            // filling memory or waiting out the last sweep. The setting still decides.
+            // filling memory or waiting out the last sweep. The setting still decides for tabs; the
+            // spare page goes either way.
             if let level = dict["memoryPressure"].flatMap(PerfSystemSample.Pressure.init(rawValue:)) {
                 lastPressureSweep = nil
                 sweepForMemoryPressure(level)

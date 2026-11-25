@@ -1,0 +1,15 @@
+# While macOS reports memory pressure Cra keeps no page made ahead (SparePage.keeps): the sweep closes
+# the spare, and the next tab makes its own page. Once pressure reads normal again, the refill after
+# that tab makes a spare and the tab after takes it. (The harness's sparePagesPressureCase checks
+# that no spare is made while pressure lasts; here the Mac's real reading is normal.)
+budget rss=900 stalls50=8
+cra://open?url=${PAGE}?n=one
+wait 4
+cra://debug?memoryPressure=warning
+expect-log spare pages: dropped 1 for memory pressure warning
+cra://open?url=${PAGE}?n=two
+wait 4
+reject-log takes a spare page
+cra://open?url=${PAGE}?n=three
+expect-log takes a spare page
+reject-log fault:
