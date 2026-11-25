@@ -1,0 +1,39 @@
+# A Peek's card has one shadow, PeekLayout.shadow (0.35 / 14 pt, 6 pt down), from the opening motion to the
+# landed card, key or not. The landed card had macOS's window shadow instead: bigger than the motion's, so it
+# jumped as the motion handed over, and bigger again whenever the Peek took the keys. Now the card's window
+# has none (windowShadow=0) and the click catcher under it draws the motion's own on the card's frame
+# (onCard=1), also after the window resizes under the Peek and while the Peek's command bar has the keys.
+budget rss=900 stalls50=30
+pace 0.5
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false, "peekInEveryTab": true}
+
+cra://open?url=${PAGE}?n=hub
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+wait 1
+cra://debug?cdp=Runtime.evaluate&params={"expression":"String(!!window.open('${PAGE}?n=peek'))","userGesture":true}
+expect-log peek: from
+wait 1.5
+cra://debug?peekShown=landed
+expect-log Cra peek shown landed: veiled=1 .* cardShadow=0\.35/14 onCard=1 windowShadow=0$
+
+# ⌘L: the Peek's own command bar takes the keys; the card's shadow stays as it was.
+cra://debug?key=l,37,1048576
+wait 1
+cra://debug?commandBarRows=bar
+expect-log Cra command bar rows bar peek: open=1 mode=editURL
+cra://debug?peekShown=bar
+expect-log Cra peek shown bar: veiled=1 .* cardShadow=0\.35/14 onCard=1 windowShadow=0$
+cra://dismiss
+wait 0.5
+
+# The window resizes under the Peek: the shadow follows the card.
+cra://debug?windowSize=1100x760
+wait 1
+cra://debug?peekShown=resized
+expect-log Cra peek shown resized: veiled=1 .* cardShadow=0\.35/14 onCard=1 windowShadow=0$
+
+# Closed: no Peek, no card shadow.
+cra://action/closeTab
+wait 1
+cra://debug?peekShown=closed
+expect-log Cra peek shown closed: veiled=0 .* cardShadow=- windowShadow=-$

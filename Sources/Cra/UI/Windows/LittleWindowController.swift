@@ -200,6 +200,13 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
     private var escapes = PeekEscapePresses()
     /// The click catcher's frame (screen coordinates), for cra://debug?peekCatcher.
     var dimFrame: NSRect? { dim?.frame }
+    /// For cra://debug?peekShown: the card's shadow as drawn, whether it sits on the card, and macOS's
+    /// window shadow, which a Peek doesn't have.
+    var peekShadowReadout: String {
+        guard let dim, let window else { return "cardShadow=- windowShadow=-" }
+        let onCard = dim.cardShadowFrame.equalTo(window.frame) ? 1 : 0
+        return "cardShadow=\(dim.cardShadowReadout) onCard=\(onCard) windowShadow=\(window.hasShadow ? 1 : 0)"
+    }
     private var controls: PeekControlsPanel?
     /// The Peek is on its way out (closePeekAnimated), or gone (endPeek).
     private(set) var closingPeek = false { didSet { if closingPeek != oldValue { peekParent?.syncPeekAddress() } } }
@@ -305,11 +312,13 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
         // Tab (with Full Keyboard Access) reaches a Peek's bar buttons as they are now (ToolbarKeyboard).
         window.autorecalculatesKeyViewLoop = true
         if parent != nil {
-            // Arc's Peek is a card: no title bar or traffic lights, 8 pt corners, a shadow.
+            // Arc's Peek is a card: no title bar or traffic lights, 8 pt corners, a shadow. The shadow is
+            // PeekDimPanel's, the opening motion's own: macOS's window shadow differed from it and
+            // changed with the Peek's key status.
             shell.isPeek = true
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.hasShadow = true
+            window.hasShadow = false
             let bar = PeekBarView(state: state)
             bar.onBack = { [weak self] in self?.browser?.goBack() }
             bar.onForward = { [weak self] in self?.browser?.goForward() }
@@ -987,6 +996,7 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
         controls.alphaValue = 0
         window.alphaValue = 0
         window.setFrame(parent.peekFrame(), display: false)
+        dim.placeShadow(around: parent.peekFrame())
         shell.layoutSubtreeIfNeeded()
         pw.addChildWindow(window, ordered: .above)
         pw.addChildWindow(controls, ordered: .above)
@@ -1032,10 +1042,12 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
             window.alphaValue = 1
             for w in self.pageWindows { w.contentView?.isHidden = false }
             self.controls?.alphaValue = 1
-            // The real card is on screen a frame later; the picture goes after it.
+            // The real card is on screen a frame later; the picture goes after it, and the card's shadow
+            // takes over from the picture's then (both at once drew it twice as dark).
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 t?.remove()
                 if self.transition === t { self.transition = nil }
+                if !self.closingPeek, !self.isParked { self.dim?.showsCardShadow = true }
             }
         }
     }
@@ -1089,6 +1101,7 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
             w.ignoresMouseEvents = false
         }
         controls?.alphaValue = 1
+        dim?.showsCardShadow = true
         // The click catcher under the card, the buttons over it, all above the window's other children.
         window.parent?.removeChildWindow(window)
         for w in [dim, window, controls].compactMap({ $0 }) {
@@ -1119,6 +1132,7 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
     func repositionPeek() {
         guard let window, let parent = peekParent, let pw = parent.window, !closingPeek else { return }
         dim?.reposition(covering: parent.peekDismissArea(), of: pw)
+        dim?.placeShadow(around: parent.peekFrame())
         window.setFrame(parent.peekFrame(), display: true)
         controls?.place(parent.peekButtonFrames(), theme: parent.focusedSpace.theme)
     }
@@ -1176,6 +1190,7 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
                 window.alphaValue = 0
                 for w in self.pageWindows { w.alphaValue = 0 }
                 self.controls?.alphaValue = 0
+                self.dim?.showsCardShadow = false
                 parent.hidePeekVeil(for: self.peekID)
             }
         }
