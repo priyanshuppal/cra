@@ -2829,6 +2829,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 CraLog.note("downloads tray \(label): open=\(main.sidebarUI.downloadsListOpen) \(tray)")
                 return
             }
+            // downloadProfile=<label>: the profile folder the newest finished download was saved under (DownloadOwner).
+            if let label = dict["downloadProfile"] {
+                CraLog.note("download profile \(label): \(DownloadHistory.shared.entries.last.map { $0.profile ?? "none" } ?? "no downloads")")
+                return
+            }
             if let label = dict["downloadState"] {
                 let rows = DownloadHistory.shared.live.map { DownloadRow.subtitle($0.row, now: Date()) }
                 let progress = DownloadHistory.shared.progress.map { String(format: "%.3f", $0) } ?? "none"

@@ -2557,7 +2557,10 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
         }
         return app.handleUnhandledKey(event)
     }
-    func browser(_ browser: CraBrowser, didUpdateDownload download: CraDownloadInfo) { app.main.browserManager(download: download) }
+    /// Listed in the browser window, saved under this window's profile.
+    func browser(_ browser: CraBrowser, didUpdateDownload download: CraDownloadInfo) {
+        app.main.reportDownload(download, from: .littleWindow(profileID: state.profileID))
+    }
 
     func browser(_ browser: CraBrowser, requestsPermissionForOrigin origin: String, kinds: UInt, completion: @escaping (Bool) -> Void) {
         // The main window's card, in the page's top left corner as in a Little Arc (#371). A quiet
