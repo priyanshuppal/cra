@@ -79,4 +79,26 @@ struct PictureInPicturePinchTests {
         let corner = CGRect(x: 1270, y: 822, width: 448, height: 252)
         #expect(pinch(corner, [0]).1 == corner)
     }
+
+    /// Arc ticks (an alignment haptic) as the fingers pass the smallest or largest size, once per
+    /// crossing: not again while they go on past it, nor as they come back, and again when they
+    /// pass it anew. Here the 448 pt window's smallest is 224 (0.5) and largest 1708 (about 3.8).
+    @Test(arguments: [
+        ([0.1, 0.1, -0.2], [false, false, false]),                       // inside the limits
+        ([0.2, -0.4, -0.4, -0.4], [false, false, true, false]),          // 0.43 passes 0.5, once
+        ([-0.6, 0.5, -0.5], [true, false, true]),                        // back inside, then past again
+        ([-0.6, 0, -0.1], [true, false, false]),                         // resting on it, then on past
+        ([2, 2, 2, -0.1, 0.5], [false, true, false, false, true]),       // the largest, the same
+        ([3, -0.9, -0.9], [true, true, false]),                          // largest, then straight past the smallest
+    ] as [([CGFloat], [Bool])])
+    func ticksAsItPassesALimit(steps: [CGFloat], ticks: [Bool]) {
+        let corner = CGRect(x: 1728 - 10 - 448, y: 1084 - 10 - 252, width: 448, height: 252)
+        var p = PictureInPicturePinch(frame: corner)
+        var got: [Bool] = []
+        for m in steps {
+            _ = p.magnify(by: m, minSize: limits.min, maxSize: limits.max, visible: visible)
+            got.append(p.passedLimit)
+        }
+        #expect(got == ticks)
+    }
 }

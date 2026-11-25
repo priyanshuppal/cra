@@ -1,0 +1,35 @@
+# Arc 1.174.3 ticks (an alignment haptic, at AppKit's default time) as a pinch on the Picture in
+# Picture window passes its smallest or largest size (MovableWindowContentView's magnify handler):
+# once per crossing, not for every step the fingers go on past it, not as they come back, and not
+# for a pinch inside the limits. Cra's pinch stopped at the limits in silence.
+cra://open?url=file://${FIXTURES}/Pages/video.html
+expect-log loaded file:
+wait 2
+cra://debug?cdp=Runtime.evaluate&params={"expression":"document.getElementById('v').requestPictureInPicture().then(()=>'pip:open')","awaitPromise":true,"userGesture":true}
+expect-log Cra cdp Runtime.evaluate .*"value":"pip:open"
+wait 1
+cra://debug?pipSize=0.30
+expect-log pip: resized to
+wait 1
+cra://debug?haptics=reset
+# Inside the limits: no tick.
+cra://debug?pipPinch=0.1,0.1,-0.1
+wait 1
+cra://debug?haptics=inside
+expect-log Cra haptics inside: generic=0 alignment=0
+# Closed past the smallest and on: one tick; back open inside: none.
+cra://debug?pipPinch=-0.5,-0.5,-0.5,-0.5,0.2
+wait 1
+cra://debug?pip=smallest
+expect-log Cra pip smallest: windows=1 .* onScreen=1
+cra://debug?haptics=smallest
+expect-log Cra haptics smallest: generic=0 alignment=1
+# Opened past the largest and on: one more.
+cra://debug?pipPinch=1,1,1,1
+wait 1
+cra://debug?pip=largest
+expect-log Cra pip largest: windows=1 .* share=0\.(9[0-9]|8[5-9]) .* onScreen=1
+cra://debug?haptics=largest
+expect-log Cra haptics largest: generic=0 alignment=2
+cra://debug?cdp=Runtime.evaluate&params={"expression":"document.exitPictureInPicture().then(()=>'pip:closed')","awaitPromise":true,"userGesture":true}
+expect-log Cra cdp Runtime.evaluate .*"value":"pip:closed"
