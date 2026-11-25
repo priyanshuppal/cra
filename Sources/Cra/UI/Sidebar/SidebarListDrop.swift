@@ -50,9 +50,7 @@ final class DragAutoscroller: NSObject {
         guard link == nil, let anchor else { return }
         lastTick = 0
         // In .common mode, since a drag keeps the run loop in event-tracking mode.
-        let l = anchor.displayLink(target: self, selector: #selector(tick(_:)))
-        l.add(to: .main, forMode: .common)
-        link = l
+        link = anchor.motionLink(target: self, selector: #selector(tick(_:)))
     }
 
     func stop() {

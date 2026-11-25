@@ -39,8 +39,7 @@ final class LibraryRailIconView: NSView {
         }
         player.selected(at: CACurrentMediaTime())
         if link == nil {
-            let l = displayLink(target: self, selector: #selector(step))
-            l.add(to: .main, forMode: .common)
+            let l = motionLink(target: self, selector: #selector(step))
             link = l
         }
         needsDisplay = true

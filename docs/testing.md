@@ -104,6 +104,8 @@ a finding fails, and when one loses a finding the baseline comes down
 - `layer-colour-outside-transaction`: a colour or opacity set on a `CALayer` Cra made itself,
   outside a `CATransaction` with actions disabled, animates for 0.25 s.
 - `timer-outside-scheduler`: `Timer.scheduledTimer` in `App/` or `Services/`.
+- `timer-frame-step`: a `Timer` at 1/60 s in `UI/`. Per-frame motion runs on a display link
+  (`motionLink`, which asks for the screen's full rate), or it moves every other frame at 120 Hz.
 - `wall-clock-in-decision`: `Date()` in the store, tab sleep or live folders.
 - `raw-observation-tracking`: `withObservationTracking` outside CraCore's
   `observeChanges(of:apply:)`. A struct copied out before the closure is never tracked.

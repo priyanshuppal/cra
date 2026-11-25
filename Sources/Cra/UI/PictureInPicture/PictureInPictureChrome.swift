@@ -1075,8 +1075,7 @@ final class PictureInPictureOverlayView: NSView {
 
     private func startLink() {
         guard link == nil else { return }
-        let l = displayLink(target: self, selector: #selector(tick(_:)))
-        l.add(to: .main, forMode: .common)
+        let l = motionLink(target: self, selector: #selector(tick(_:)))
         link = l
         lastTick = 0
     }

@@ -41,6 +41,11 @@ gains a finding fails, one that loses one is reported so the baseline can come d
       events off the window's scroll monitor once it starts over such a view, so a space or
       Library swipe begun there never arrives, or loses its end and stays between two pages (the
       Library's Downloads list, 9 Nov 2026). Use SidebarListScrollView, which opts out.
+  timer-frame-step
+      A Timer at 1/60 s (Timer(…) or Timer.scheduledTimer(…)) under UI/: per-frame motion runs
+      on a display link (NSView.motionLink), or it moves every other frame on a 120 Hz screen.
+      Grandfathered: DocumentPictureInPictureSpring's watch for the mouse button's release (not
+      motion) and WindowColourProbe (a test probe that reads pixels).
   perf-boundary
       The performance recorder stays removable (#91, docs/performance.md): outside its two folders
       only the files in PERF_CALLERS reach it, and inside Sources/Cra/Perf only PerfCEF.swift sees
@@ -66,6 +71,7 @@ PERF_CALLERS = {"App/main.swift", "App/AppDelegate.swift", "Services/BrowserMana
                 "UI/Settings/SettingsWindowController.swift"}
 PERF_NAME = re.compile(r"\b(?:Perf(?:[A-Z]\w*)?|PerformancePane)\b")
 NETWORK = re.compile(r"\bURLSession\b|\bCFNetwork\b|\bNWConnection\b|\bNWPathMonitor\b|^\s*import\s+Network\b|\bCFSocket\w*|\bCFStream\w*|\bsocket\(")
+FRAME_TIMER = re.compile(r"\bTimer(?:\.scheduledTimer)?\(.*\b1(?:\.0)? / 60\b")
 CLOCK_FILES = {"Services/SidebarStore.swift", "Services/BrowserManager.swift", "Services/LiveFolderManager.swift",
                "Services/SidebarIntegrity.swift", "App/AppComposition.swift"}
 
@@ -110,6 +116,8 @@ def findings():
                     hit("layer-colour-outside-transaction", rel, i)
             if "Timer.scheduledTimer" in line and top in ("App", "Services") and rel != "Services/Scheduler.swift":
                 hit("timer-outside-scheduler", rel, i)
+            if top == "UI" and FRAME_TIMER.search(line):
+                hit("timer-frame-step", rel, i)
             if rel in CLOCK_FILES and re.search(r"\bDate\(\)", line):
                 hit("wall-clock-in-decision", rel, i)
             if "withObservationTracking" in line:

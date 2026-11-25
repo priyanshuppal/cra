@@ -92,8 +92,7 @@ final class NewSpacePlusView: NSView {
         guard window != nil else { return settleNow() }
         if link == nil {
             lastStep = CACurrentMediaTime()
-            let l = displayLink(target: self, selector: #selector(step))
-            l.add(to: .main, forMode: .common)
+            let l = motionLink(target: self, selector: #selector(step))
             link = l
         }
     }
