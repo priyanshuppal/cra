@@ -3033,8 +3033,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         let content = shell.contentContainer
         // Pages in their own windows (DevTools docked, or CRA_EMBED_PAGES=0); embedded ones go with the content.
         let pages = browsers.runtimes.values.compactMap(\.hostWindow).filter { $0.parent === window && !EmbeddedPages.isHost($0) }
-        return String(format: "veiled=%d alpha=%.2f scale=%@ windows=%@", peekVeil.isOn ? 1 : 0, content.alphaValue, scale(content),
-                      pages.map { String(format: "%.2f@", $0.alphaValue) + scale($0.contentView) }.joined(separator: ","))
+        let peek = peeks.first { !$0.isParked && !$0.closingPeek }?.peekShadowReadout ?? "cardShadow=- windowShadow=-"
+        return String(format: "veiled=%d alpha=%.2f scale=%@ windows=%@ %@", peekVeil.isOn ? 1 : 0, content.alphaValue, scale(content),
+                      pages.map { String(format: "%.2f@", $0.alphaValue) + scale($0.contentView) }.joined(separator: ","), peek)
     }
 
     private func applyPeekVeil(duration: TimeInterval, timing: CAMediaTimingFunction? = nil) {

@@ -527,9 +527,9 @@ final class PeekTransition {
         CATransaction.setDisableActions(true)
         group.frame = view.bounds
         shadow.shadowColor = NSColor.black.cgColor
-        shadow.shadowOpacity = 0.35
-        shadow.shadowRadius = 14
-        shadow.shadowOffset = CGSize(width: 0, height: -6)
+        shadow.shadowOpacity = PeekLayout.shadow.opacity
+        shadow.shadowRadius = PeekLayout.shadow.radius
+        shadow.shadowOffset = PeekLayout.shadow.offset
         clip.cornerRadius = PeekLayout.cornerRadius
         clip.cornerCurve = .continuous
         clip.masksToBounds = true

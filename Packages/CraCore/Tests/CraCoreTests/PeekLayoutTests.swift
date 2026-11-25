@@ -68,6 +68,12 @@ struct PeekLayoutTests {
         #expect(arc.minX == 138 && arc.width == 1105)
     }
 
+    @Test func cardShadowIsTheOpeningMotions() {
+        // One shadow from the first frame of the open to the landed card, key or not: the motion's
+        // values, which the card kept instead of macOS's window shadow.
+        #expect(PeekLayout.shadow == PeekLayout.Shadow(opacity: 0.35, radius: 14, offset: CGSize(width: 0, height: -6)))
+    }
+
     @Test func hiddenSidebarCentresOnTheWindow() {
         let card = PeekLayout.card(in: PeekLayout.area(window: Self.window, contentMinX: 0))
         #expect(card.midX == Self.window.width / 2)

@@ -39,6 +39,7 @@ enum PeekDimPanelTests {
         }
         expect(dismissed == 2, "both left and right background clicks dismiss Peek")
         checkSidebar(parent, panel)
+        checkCardShadow(parent, panel)
         checkPageFocus(parent)
         parent.removeChildWindow(panel)
         panel.close()
@@ -60,6 +61,28 @@ enum PeekDimPanelTests {
         panel.reposition(covering: PeekLayout.dismissArea(covering: frame, contentMinX: 0), of: parent)
         expect(panel.frame.contains(NSPoint(x: frame.minX + 114, y: frame.midY)), "with the sidebar hidden the page fills the window")
         expect(panel.contentView?.layer?.maskedCorners.contains(.layerMinXMaxYCorner) == true, "all four corners round with the sidebar hidden")
+    }
+
+    /// The card's shadow is the panel's, hidden until the card lands, on the card's frame as the
+    /// window resizes under it.
+    @MainActor
+    private static func checkCardShadow(_ parent: NSWindow, _ panel: PeekDimPanel) {
+        let area = PeekLayout.area(window: parent.frame.size, contentMinX: 236)
+        func card() -> NSRect { PeekLayout.card(in: area).offsetBy(dx: parent.frame.minX, dy: parent.frame.minY) }
+        panel.reposition(covering: PeekLayout.dismissArea(covering: parent.frame, contentMinX: 236), of: parent)
+        panel.placeShadow(around: card())
+        expect(!panel.showsCardShadow && panel.cardShadowReadout == "0.00/14", "no card shadow under the opening motion")
+        panel.showsCardShadow = true
+        expect(panel.cardShadowReadout == "0.35/14", "the landed card's shadow is PeekLayout.shadow's")
+        expect(panel.cardShadowFrame == card(), "the shadow sits on the card")
+        parent.setFrame(NSRect(origin: parent.frame.origin, size: NSSize(width: 1300, height: 900)), display: false)
+        let wider = PeekLayout.card(in: PeekLayout.area(window: parent.frame.size, contentMinX: 236))
+            .offsetBy(dx: parent.frame.minX, dy: parent.frame.minY)
+        panel.reposition(covering: PeekLayout.dismissArea(covering: parent.frame, contentMinX: 236), of: parent)
+        panel.placeShadow(around: wider)
+        expect(panel.cardShadowFrame == wider, "the shadow follows the card as the window resizes")
+        panel.showsCardShadow = false
+        expect(panel.cardShadowReadout == "0.00/14", "the shadow goes with the card as it closes")
     }
 
     @MainActor

@@ -28,6 +28,17 @@ public enum PeekLayout {
     /// Room kept between the button column and the window's edge when the area is too narrow for
     /// Arc's 80 % card to leave the column inside it (Arc was measured only at 1728 pt).
     public static let buttonMargin: CGFloat = 8
+    /// The card's shadow, the same while it grows out of the link and once it has landed, key or not:
+    /// macOS's own window shadow, which took over on landing, was bigger than the opening motion's
+    /// and grew again whenever the Peek took the keys.
+    public struct Shadow: Sendable, Equatable {
+        public let opacity: Float
+        public let radius: CGFloat
+        /// y up, as in AppKit: below the card.
+        public let offset: CGSize
+        public init(opacity: Float, radius: CGFloat, offset: CGSize) { (self.opacity, self.radius, self.offset) = (opacity, radius, offset) }
+    }
+    public static let shadow = Shadow(opacity: 0.35, radius: 14, offset: CGSize(width: 0, height: -6))
     /// The page under a Peek (Arc: 233/240/254 → 178/172/151 over the window's background).
     public static let pageAlpha: CGFloat = 0.28
     /// The page under a Peek also draws back a little, its margins widening, unless pages fill the
