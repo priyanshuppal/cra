@@ -13,4 +13,19 @@ public enum SafeStoragePlan {
     public static func readsSecretAtLaunch(markerExists: Bool, pendingImport: Bool) -> Bool {
         markerExists && pendingImport
     }
+
+    /// How SecItemAdd of a fresh secret ended, and which secret Cra then uses. Chromium's OSCrypt makes
+    /// the same item during the session when it is missing, and a lazy read can race it: both find
+    /// nothing, both add, one gets errSecDuplicateItem. Losing, Cra reads the winner's secret again
+    /// rather than caching none for the session (CredentialImport.stage would fail until relaunch).
+    public enum KeychainAdd: Sendable { case added, duplicate, failed }
+    public enum SecretAfterAdd: Sendable, Equatable { case own, readAgain, noSecret }
+
+    public static func secretAfter(_ add: KeychainAdd) -> SecretAfterAdd {
+        switch add {
+        case .added: .own
+        case .duplicate: .readAgain
+        case .failed: .noSecret
+        }
+    }
 }

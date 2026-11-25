@@ -83,11 +83,19 @@ enum SafeStorage {
                                    kSecAttrAccount as String: account, kSecAttrLabel as String: service,
                                    kSecValueData as String: Data(secret.utf8)]
         let added = SecItemAdd(item as CFDictionary, nil)
-        guard added == errSecSuccess else {
+        // Chromium's OSCrypt may have made the item since the read above (SafeStoragePlan.secretAfter).
+        switch SafeStoragePlan.secretAfter(added == errSecSuccess ? .added : added == errSecDuplicateItem ? .duplicate : .failed) {
+        case .own: return secret
+        case .readAgain:
+            var again: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &again)
+            if status == errSecSuccess, let data = again as? Data { return String(data: data, encoding: .utf8) }
+            NSLog("Cra: reading the \(service) Keychain item after a duplicate add failed (\(status))")
+            return nil
+        case .noSecret:
             NSLog("Cra: creating the \(service) Keychain item failed (\(added))")
             return nil
         }
-        return secret
     }
 
     /// Signed with a Developer ID (a team), so the Keychain keeps trusting Cra across updates.
