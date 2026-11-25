@@ -7,7 +7,7 @@ import QuartzCore
 /// Cra shows all of its confirmations with this. Arc 1.171, measured 2 Nov 2026 at 1x: a 42 pt pill 8 pt below the top of the
 /// page and 9 pt in from its right edge, 14 pt medium black text with 12 pt either side, a fill
 /// from the space's colours with a 1 pt darker outline. It springs in from its top centre
-/// (≈0.3 s response, 4 % overshoot), stays 4.85 s after the last tab it announced (another one
+/// (Arc 1.174.3's code: response 0.4 s, damping ratio 0.7, `ArcControlSpring.toast`), stays 4.85 s after the last tab it announced (another one
 /// bumps it by 4 %) and shrinks back into its top in 80 ms. Some of Arc's carry a button
 /// ("Screenshot Copied to Clipboard" offers Save): a capsule after the text, and the toast stays
 /// up while the pointer is on it.
@@ -443,10 +443,10 @@ final class ShinyToast {
         let spring = CASpringAnimation(keyPath: "transform.scale")
         spring.fromValue = 0.4
         spring.toValue = 1
-        // ω = 2π / 0.3 s, damping ratio 0.67: Arc's 4 % overshoot ~0.2 s in, settled by 0.4 s.
+        // Arc 1.174.3's own toast spring (ToastAnimator): response 0.4 s, damping ratio 0.7.
         spring.mass = 1
-        spring.stiffness = 440
-        spring.damping = 28
+        spring.stiffness = ArcControlSpring.toast.stiffness
+        spring.damping = ArcControlSpring.toast.damping
         spring.duration = spring.settlingDuration
         // A new child window reaches the screen a frame or two late; hold the start until then.
         // No fade: Arc's first frame is the small pill at full colour (0.41 of its width).
