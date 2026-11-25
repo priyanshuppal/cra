@@ -3493,6 +3493,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(pasteAsPlainText(_:)) { return pageTakingPasteAndMatchStyle != nil }
+        if item.action == #selector(undoFromMenu(_:)) { return validateUndo(item) }
         if let id = item.representedObject as? String, let title = flippingTitle(id), item.title != title { item.title = title }
         // The menu bar's Tabs rows can act only when there is something to act on (CraCore TabsMenu, #622).
         if let id = item.representedObject as? String, item.menu === tabsMenu, let state = tabsMenuState(id) {
@@ -3937,15 +3938,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return false
     }
 
-    /// Arc: ⌘Z brings back the tab you closed last (closing registers an undo, GitHub #21), or undoes
-    /// the last Tidy, unless the keyboard is in something with text to undo: a text field, or an editable
-    /// element in a page (Chromium's page view reports its ui::TextInputType, 0 = none). On an Easel,
-    /// ⌘Z undoes canvas edits instead.
+    /// Arc: ⌘Z undoes the sidebar's last step (its window undo manager): a move, a Clear, a deleted folder,
+    /// a Tidy, or a close, which brings back the tab closed last (GitHub #21). Not while the keyboard is in
+    /// something with text to undo: a text field, or an editable element in a page (Chromium's page view
+    /// reports its ui::TextInputType, 0 = none). On an Easel, ⌘Z undoes canvas edits instead.
     private func undoClosedTab(_ event: NSEvent) -> Bool {
         guard Shortcut("z", .command).matches(event), !textFieldHasKey(event), !easelHasKey(event) else { return false }
-        // The last thing to undo may be a tidy (Arc's "Undo Tidy Tabs"); a tab closed since comes first.
-        if !store.undoTidy() { perform("reopenClosedTab") }
+        undoSidebar()
         return true
+    }
+
+    /// The sidebar's newest step goes back; a close, or nothing left to undo, reopens as ⇧⌘T does.
+    private func undoSidebar() {
+        let outcome = store.undo()
+        CraLog.note("undo: \(outcome)")
+        if case .undone = outcome { return }
+        perform("reopenClosedTab")
+    }
+
+    private static let textUndo = Selector(("undo:"))
+
+    /// Edit ▸ Undo. A text field, a page's text input or an easel with the keyboard undoes its own edit, as
+    /// the plain `undo:` row did; in a browser window otherwise, the sidebar's step does, as ⌘Z.
+    @objc func undoFromMenu(_ sender: Any?) {
+        if sidebarHasUndo { undoSidebar() } else { NSApp.sendAction(Self.textUndo, to: nil, from: sender) }
+    }
+
+    /// The key window is a browser window and nothing in it with an undo of its own has the keyboard.
+    private var sidebarHasUndo: Bool {
+        guard let window = NSApp.keyWindow, window.windowController is MainWindowController else { return false }
+        return !textFieldHasKey(in: window) && !easelHasKey(in: window)
+    }
+
+    /// Edit ▸ Undo's title and state: "Undo Move Item", "Undo Clear Tabs"… (Arc's titles, SidebarUndo), or
+    /// what the text or canvas with the keyboard says for its `undo:`.
+    private func validateUndo(_ item: NSMenuItem) -> Bool {
+        if sidebarHasUndo {
+            let title = store.undoLabel.map { "Undo \($0)" } ?? "Undo"
+            if item.title != title { item.title = title }
+            return true
+        }
+        let probe = NSMenuItem(title: "Undo", action: Self.textUndo, keyEquivalent: "")
+        let target = NSApp.target(forAction: Self.textUndo, to: nil, from: probe) as AnyObject?
+        let enabled = (target as? NSMenuItemValidation)?.validateMenuItem(probe)
+            ?? (target as? NSUserInterfaceValidations)?.validateUserInterfaceItem(probe)
+            ?? (target != nil)
+        if item.title != probe.title { item.title = probe.title }
+        return enabled
     }
 
     private func easelHasKey(_ event: NSEvent) -> Bool { easelHasKey(in: event.window ?? NSApp.keyWindow) }
@@ -4396,7 +4435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         menubar.addItem(submenu: file, title: "File")
 
         let edit = NSMenu(title: "Edit")
-        edit.addItem(std("Undo", Selector(("undo:")), "z"))
+        edit.addItem(std("Undo", #selector(undoFromMenu(_:)), "z"))
         edit.addItem(std("Redo", Selector(("redo:")), "z", [.command, .shift]))
         edit.addItem(.separator())
         edit.addItem(std("Cut", #selector(NSText.cut(_:)), "x"))

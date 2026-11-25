@@ -83,6 +83,10 @@ built release app with a test profile. Note anything that fails in the release's
 
 ### Sidebar, tabs and the command bar
 
+- **Sidebar undo:** drag a tab into a folder, then open Edit: it reads "Undo Move Item"; ⌘Z puts the tab back. Clear
+  Today, then Edit reads "Undo Clear Tabs" and ⌘Z brings every tab back. With the URL field or a page's text box
+  focused, Edit ▸ Undo is the text's own ("Undo Typing") and ⌘Z undoes the typing, not the sidebar. (The store test
+  and `clear-today-undo` check the steps; the menu's title needs a key window, which a test copy never has.)
 - **#483:** with no selected tab and the sidebar saved hidden, it comes straight out floating and
   stays visible when the pointer leaves and when another app comes to the front. Its button switches
   between docked and floating. Open a page: it remains while the pointer is over it, then slides away

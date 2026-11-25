@@ -124,6 +124,7 @@ enum StoreTests {
         duplicateFavoritesAndSplits()
         windowsShareTheSidebar()
         clearTodayArchivesInOnePass()
+        sidebarUndo()
         settingsSync()
         syncLeavesBlankWindowsOnTheirMac()
         blankWindows()
@@ -3850,6 +3851,70 @@ enum StoreTests {
         let one = sequential.archive.prefix(3).map { again.firstIndex(of: $0.id) ?? -1 }
         let many = batch.archive.prefix(3).map { lot.firstIndex(of: $0.id) ?? -1 }
         expect(one == many && one == [2, 1, 0], "a batch archives in the order one-by-one archiving did (\(one) vs \(many))")
+    }
+
+    /// ⌘Z undoes the sidebar's steps newest first, as Arc's window undo manager did: a drop in the wrong place,
+    /// a new folder, a Clear and a deleted folder each come back where they were, with the sidebar sound after
+    /// each. A close is left to ⇧⌘T's rules, and a step whose items went is skipped for the one before it.
+    @MainActor
+    private static func sidebarUndo() {
+        let store = SidebarStore(clock: ManualScheduler())
+        let sid = store.createSpace(title: "Undo steps", emoji: "↩️").id
+        guard let space = store.space(sid) else { return expect(false, "the space is made") }
+        let today = space.todayContainerID, pinned = space.pinnedContainerID
+        let tabs = (0..<5).map { store.createTab(url: "https://example.com/undo/\($0)", in: sid, select: false).id }
+        let order = store.item(today)!.children
+        expect(Set(order) == Set(tabs), "five Today tabs in a space of their own")
+
+        // A tab dropped in the wrong place goes back to the same parent and index.
+        let folder = store.createFolder(named: "Drop here", in: pinned)
+        expect(store.undoLabel == "New Folder…", "Edit ▸ Undo names the new folder, in Arc's words")
+        let moved = order[2]
+        store.moveItems([moved], to: folder.id, index: 0)
+        expect(store.item(moved)?.parentID == folder.id && store.undoLabel == "Move Item", "the drop is the newest step: Undo Move Item")
+        expect(store.undo() == .undone("Move Item"), "⌘Z undoes the drop")
+        expect(store.item(today)?.children == order && store.item(moved)?.parentID == today && store.item(folder.id)?.children == [],
+               "the tab is back in Today at its index")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing a move")
+        expect(store.undo() == .undone("New Folder…") && store.item(folder.id) == nil && !store.item(pinned)!.children.contains(folder.id),
+               "⌘Z again takes away the folder made before it, still empty")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing a new folder")
+
+        // Clear: all five back, in their order, out of the archive.
+        expect(Set(store.todayClearing(sid, playing: [])) == Set(tabs), "Clear would take all five")
+        store.clearToday(sid, playing: [])
+        expect(tabs.allSatisfy { store.item($0) == nil } && store.undoLabel == "Clear Tabs", "Clear archives the five: Undo Clear Tabs")
+        expect(store.undo() == .undone("Clear Tabs"), "⌘Z undoes the Clear")
+        expect(store.item(today)?.children == order && tabs.allSatisfy { id in !store.archive.contains { $0.id == id } },
+               "all five are back in Today, in order, and out of the archive")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing a Clear")
+
+        // Delete Folder: the folder, the folder in it and their tabs come back where they were.
+        let work = store.createFolder(named: "Work", in: pinned)
+        let inner = store.createFolder(named: "Inner", in: work.id)
+        store.moveItems([tabs[0], tabs[1]], to: work.id, index: nil)
+        store.moveItem(tabs[2], to: inner.id, index: nil)
+        let pinnedBefore = store.item(pinned)!.children, workBefore = store.item(work.id)!.children
+        store.deleteFolder(work.id)
+        expect(store.item(work.id) == nil && store.item(inner.id) == nil && store.item(tabs[0]) == nil && store.undoLabel == "Delete Folder",
+               "Delete Folder archives its tabs: Undo Delete Folder")
+        expect(store.undo() == .undone("Delete Folder"), "⌘Z undoes Delete Folder")
+        expect(store.item(pinned)?.children == pinnedBefore && store.item(work.id)?.children == workBefore
+               && store.item(inner.id)?.children == [tabs[2]] && store.item(work.id)?.title == "Work",
+               "the folder is back in Pinned with its folder and tabs, in their order")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after undoing Delete Folder")
+
+        // A step whose tab went without a step of its own (auto-archive) does nothing: the one before it goes back.
+        let spare = store.createFolder(named: "Spare", in: pinned)
+        store.moveItem(tabs[3], to: spare.id, index: nil)
+        store.archiveTabs([tabs[3]], reason: .auto)
+        expect(store.undoLabel == "Move Item", "auto-archive isn't a step of its own")
+        expect(store.undo() == .undone("New Folder…") && store.item(spare.id) == nil, "a step whose items went is skipped for the one before")
+        expect(store.integrityProblems().isEmpty, "the sidebar is sound after skipping a step")
+
+        // A close is ⇧⌘T's to bring back, after any edit before it.
+        store.archiveTab(tabs[4], reason: .manual)
+        expect(store.undoLabel == "Close Tab" && store.undo() == .reopen, "⌘Z after a close reopens it, as ⇧⌘T")
     }
 
     /// Two Macs on one sync folder: the second takes the first's sidebar, a change on either reaches

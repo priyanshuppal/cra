@@ -1,0 +1,25 @@
+# ⌘Z after Clear brings every cleared Today tab back, in its order, as Arc's "Undo Clear Tabs" did. ⌘Z
+# reopened only the tab closed last, so after clearing two tabs it brought back one.
+budget rss=800 stalls50=30
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false}
+pace 0.5
+
+cra://open?url=${PAGE}?n=first
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+cra://open?url=${PAGE}?n=second
+wait 1
+cra://open?url=${PAGE}?n=shown
+wait 1
+cra://action/clearToday
+wait 1
+cra://debug?applescript=tell%20current%20application%20to%20count%20%C2%ABclass%20tAbB%C2%BB%20of%20%C2%ABclass%20WiND%C2%BB%201
+expect-log Cra applescript → 1$
+# ⌘Z, typed on the browser window (no text field has the keyboard).
+cra://debug?key=z,6,1048576
+wait 1
+expect-log undo: undone\("Clear Tabs"\)
+cra://debug?applescript=tell%20current%20application%20to%20count%20%C2%ABclass%20tAbB%C2%BB%20of%20%C2%ABclass%20WiND%C2%BB%201
+expect-log Cra applescript → 3$
+cra://debug?applescript=tell%20current%20application%20to%20get%20%C2%ABclass%20URL%20%C2%BB%20of%20%C2%ABclass%20tAbB%C2%BB%20of%20%C2%ABclass%20WiND%C2%BB%201
+# Newest first, as the Today list shows them; the sidebar's soundness is checked at the end, as in every scenario.
+expect-log Cra applescript → .*n=shown.*n=second.*n=first
