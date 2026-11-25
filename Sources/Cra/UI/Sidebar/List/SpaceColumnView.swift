@@ -677,7 +677,7 @@ final class FavoritesGridView: NSView {
         // space's pick in this window changes. Its tiles' selection observes the tabs themselves (isSelected).
         var synced = false
         observeChanges(of: { [weak self] () -> UUID?? in
-            guard let self else { return nil }
+            guard self != nil else { return nil }
             let pins = !store.settings.showToolbar && !store.isIncognito(space: spaceID)
             return .some(pins ? store.selectedTabID(in: spaceID, window: ui.windowID) : nil)
         }) { [weak self] _ in
