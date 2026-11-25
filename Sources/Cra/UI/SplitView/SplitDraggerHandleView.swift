@@ -11,6 +11,19 @@ final class SplitDraggerHandleView: NSView {
     var onDragEnded: (() -> Void)?
     var onDoubleClick: (() -> Void)?
     var hitOutset: CGFloat = SplitPaneLayout.Constants.handleHitOutset
+    /// The space reads dark: the pill is white, as Arc's follows its backdrop
+    /// (`contentOverBackgroundAppearance`), where a black one was lost.
+    var isDark = false { didSet { if isDark != oldValue { refreshPill() } } }
+    /// Shows the pill without a drag, and takes no clicks: Arc's dragger pill in the drop
+    /// region's gap while a tab is dragged over the page.
+    var showsPill = false {
+        didSet {
+            guard showsPill != oldValue else { return }
+            refreshPill()
+            window?.invalidateCursorRects(for: self)
+            updateTrackingAreas()
+        }
+    }
 
     private let pill = NSView()
     private var tracking: NSTrackingArea?
@@ -23,8 +36,10 @@ final class SplitDraggerHandleView: NSView {
         /// Arc shows a short centred capsule.
         static let pillThickness: CGFloat = 4
         static let pillLength: CGFloat = 36
-        static let pillColor = NSColor(white: 0, alpha: 0.28)
-        static let pillHighlightColor = NSColor(white: 0, alpha: 0.45)
+        static func pillColor(dark: Bool, highlighted: Bool) -> NSColor {
+            let t = SplitDraggerPill.tone(dark: dark, highlighted: highlighted)
+            return NSColor(white: t.white, alpha: t.alpha)
+        }
         static let fade: TimeInterval = 0.12
     }
 
@@ -32,7 +47,7 @@ final class SplitDraggerHandleView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         pill.wantsLayer = true
-        pill.layer?.backgroundColor = Style.pillColor.cgColor
+        pill.layer?.backgroundColor = Style.pillColor(dark: false, highlighted: false).cgColor
         pill.layer?.cornerRadius = Style.pillThickness / 2
         pill.alphaValue = 0
         addSubview(pill)
@@ -52,6 +67,7 @@ final class SplitDraggerHandleView: NSView {
 
     /// The gap is narrow; accept hits a little outside it.
     override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !showsPill else { return nil }
         let p = convert(point, from: superview)
         return bounds.insetBy(dx: -hitOutset, dy: -hitOutset).contains(p) ? self : nil
     }
@@ -63,6 +79,7 @@ final class SplitDraggerHandleView: NSView {
     private var resizeCursor: NSCursor { orientation == .horizontal ? .resizeLeftRight : .resizeUpDown }
 
     override func resetCursorRects() {
+        guard !showsPill else { return }
         addCursorRect(bounds.insetBy(dx: -hitOutset, dy: -hitOutset), cursor: resizeCursor)
     }
 
@@ -71,6 +88,8 @@ final class SplitDraggerHandleView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = tracking { removeTrackingArea(t) }
+        tracking = nil
+        guard !showsPill else { return }
         let t = NSTrackingArea(rect: bounds.insetBy(dx: -hitOutset, dy: -hitOutset), options: [.mouseEnteredAndExited, .cursorUpdate, .activeAlways], owner: self, userInfo: nil)
         addTrackingArea(t)
         tracking = t
@@ -81,14 +100,14 @@ final class SplitDraggerHandleView: NSView {
     override func mouseExited(with event: NSEvent) { hovered = false; refreshPill(); if !dragging { NSCursor.arrow.set() } }
 
     /// Observed on Arc 1.170: hovering the gap shows nothing; the gap only
-    /// changes the cursor. The pill is shown while dragging.
+    /// changes the cursor. The pill is shown while dragging, and in the drop region's gap.
     private func refreshPill() {
-        let visible = dragging
+        let visible = dragging || showsPill
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = Style.fade
             pill.animator().alphaValue = visible ? 1 : 0
         }
-        pill.layer?.backgroundColor = (dragging ? Style.pillHighlightColor : Style.pillColor).cgColor
+        pill.layer?.backgroundColor = Style.pillColor(dark: isDark, highlighted: dragging).cgColor
     }
 
     override func mouseDown(with event: NSEvent) {

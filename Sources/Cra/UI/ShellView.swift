@@ -106,6 +106,13 @@ final class ShellView: NSView {
     private(set) var dropPreview: SplitDropProposal.Insert?
     static let dropRegionID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     let dropRegion = SplitDropRegionView()
+    /// Arc's dragger pill in the drop region's gap (1.173.1): shown, not draggable, while the
+    /// region is open. The dividers themselves wait for the drop.
+    private let dropPill: SplitDraggerHandleView = {
+        let h = SplitDraggerHandleView(frame: .zero)
+        h.showsPill = true
+        return h
+    }()
     /// The pane a drop would replace: Arc rings it as it rings the focused pane.
     var dropReplaceID: UUID? { didSet { if dropReplaceID != oldValue { updateFocusRings() } } }
     /// Panes without a page (Arc's tinted "Search or Enter URL…" pane).
@@ -113,6 +120,8 @@ final class ShellView: NSView {
     var isDarkTheme = false {
         didSet {
             for c in paneCards { c.isDark = isDarkTheme }
+            for h in handles { h.isDark = isDarkTheme }
+            dropPill.isDark = isDarkTheme
             refreshLoadingInk()
         }
     }
@@ -544,6 +553,7 @@ final class ShellView: NSView {
         while handles.count < max(0, paneCards.count - 1) {
             let h = SplitDraggerHandleView(frame: .zero)
             h.orientation = orientation
+            h.isDark = isDarkTheme
             let index = handles.count
             h.onDragBegan = { [weak self] in self?.beginPaneDrag(index) }
             h.onDrag = { [weak self] d in self?.dragPane(index, delta: d) }
@@ -691,8 +701,12 @@ final class ShellView: NSView {
         if preview != nil, dropRegion.superview !== contentContainer {
             dropRegion.isDark = isDarkTheme
             contentContainer.addSubview(dropRegion, positioned: .below, relativeTo: sidePanel)
+            dropPill.isDark = isDarkTheme
+            contentContainer.addSubview(dropPill, positioned: .below, relativeTo: sidePanel)
         }
+        if let preview { dropPill.orientation = preview.orientation }
         let target = paneLayout(in: contentContainer.bounds)
+        if opening, let g = dropPillFrame(target) { dropPill.frame = g }
         if let f = target.frames[Self.dropRegionID], opening {
             // It grows from a sliver at its slot, as a new pane does.
             let horizontal = preview?.orientation != .vertical
@@ -701,7 +715,7 @@ final class ShellView: NSView {
             dropRegion.alphaValue = 0
         }
         guard animated, SplitPaneLayout.Constants.transitionDuration > 0, window != nil else {
-            if preview == nil { dropRegion.removeFromSuperview() }
+            if preview == nil { dropRegion.removeFromSuperview(); dropPill.removeFromSuperview() }
             needsLayout = true
             return
         }
@@ -722,9 +736,10 @@ final class ShellView: NSView {
             } else {
                 dropRegion.animator().alphaValue = 0
             }
+            if let g = dropPillFrame(target) { dropPill.animator().frame = g; dropPill.animator().alphaValue = 1 } else { dropPill.animator().alphaValue = 0 }
         } completionHandler: { [weak self] in
             guard let self else { return }
-            if self.dropPreview == nil { self.dropRegion.removeFromSuperview() }
+            if self.dropPreview == nil { self.dropRegion.removeFromSuperview(); self.dropPill.removeFromSuperview() }
             self.animatingPanes = false
             for c in self.paneCards { c.frozenWebBounds = nil }
             self.needsLayout = true
@@ -737,6 +752,25 @@ final class ShellView: NSView {
         dropRegion.cornerRadius = paneCornerRadius
         if animated { dropRegion.animator().frame = f } else if dropRegion.frame != f { dropRegion.frame = f }
         dropRegion.alphaValue = 1
+        if let g = dropPillFrame(layout) {
+            if animated { dropPill.animator().frame = g } else if dropPill.frame != g { dropPill.frame = g }
+            dropPill.alphaValue = 1
+        }
+    }
+
+    /// The gap next to the drop region that shows Arc's pill (SplitDropProposal.pillGap).
+    private func dropPillFrame(_ layout: SplitPaneLayout.Result) -> NSRect? {
+        guard let preview = dropPreview else { return nil }
+        let count = paneCards.count + 1
+        guard let g = SplitDropProposal.pillGap(regionIndex: min(max(0, preview.index), count - 1), count: count),
+              g < layout.gaps.count else { return nil }
+        return layout.gaps[g]
+    }
+
+    /// For `cra://debug?dropSplit`: the gap the drop region's pill sits in, nil when it shows none.
+    var dropPillGap: Int? {
+        guard dropPill.superview != nil, dropPill.alphaValue > 0 else { return nil }
+        return paneLayout(in: contentContainer.bounds).gaps.firstIndex(of: dropPill.frame)
     }
 
     /// The panes' frames in the content area and the drop region's, as laid out now, for

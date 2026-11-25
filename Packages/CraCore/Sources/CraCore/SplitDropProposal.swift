@@ -114,6 +114,18 @@ public enum SplitDropProposal {
         hypot(max(r.minX - p.x, 0, p.x - r.maxX), max(r.minY - p.y, 0, p.y - r.maxY))
     }
 
+    /// Which gap, among the `count` panes the drop region is laid out with (itself included), shows
+    /// Arc's dragger pill: Arc 1.173.1 measured "a dragger pill in its gap" with the region at a lone
+    /// page's edge, where it has one gap (Arc: `shouldShowInteractivePaneInsertionHandle`,
+    /// `displayInteractivePaneInsertionDraggerHandle`). Gap `i` lies between panes `i` and `i + 1`.
+    /// The region's leading gap, or its trailing one when it comes first; nil without a gap.
+    /// [U] A region between two panes has a gap on each side; Arc's choice there isn't measured, and
+    /// Cra takes the one before it.
+    public static func pillGap(regionIndex: Int, count: Int) -> Int? {
+        guard count > 1, (0..<count).contains(regionIndex) else { return nil }
+        return regionIndex == 0 ? 0 : regionIndex - 1
+    }
+
     /// The panes with the drop region among them: it takes an even share, 1/(n+1), and the
     /// others keep their proportions in what is left.
     public static func panes(_ panes: [SplitPaneLayout.Pane], inserting id: UUID, at insert: Insert) -> [SplitPaneLayout.Pane] {
