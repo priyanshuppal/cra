@@ -3,7 +3,8 @@
 # resting mid-page. The shell's tracking area now samples the pointer as it moves, and the only timer is a
 # one-shot look the tracker asks for (the wait in the strip, the delay before the bar goes). `toolbar=move`
 # samples a stand-in pointer as a move does (the real pointer of a scenario's copy can be anywhere), and
-# `toolbar=timers:<label>` counts the looks the timer took since the last `timers`.
+# `toolbar=timers:<label>` counts the looks the timer took since the last `timers`. `toolbar=place` moves the
+# stand-in pointer without a sample and `toolbar=menuEnd` posts a menu's end of tracking.
 seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": true, "autoHideToolbar": true}
 cra://debug?windowSize=1200x800
 cra://open?url=${PAGE}?n=idle
@@ -55,5 +56,25 @@ expect-log toolbar timers:9: out=0 look=0 looks=[1-9][0-9]*
 wait 2
 cra://debug?toolbar=timers:10
 expect-log toolbar timers:10: out=0 look=0 looks=0
+# A hold that ends with the pointer away: a menu pulled from the bar tracks the pointer itself, so the shell sees no
+# moves while it is open and the bar's last sample (on the bar) stands. `place` moves the stand-in pointer without a
+# sample, as the pointer leaving under an open menu does. Until the menu's end says so, nothing looks and the bar
+# stays out; once it ends, one look sees the pointer away and the bar goes after the delay.
+cra://debug?toolbar=move:700,4
+wait 0.5
+cra://debug?toolbar=timers:11
+expect-log toolbar timers:11: out=1 look=0 looks=1
+cra://debug?toolbar=place:700,400
+expect-log toolbar place:700,400: out=1 look=0
+wait 1
+cra://debug?toolbar=timers:12
+expect-log toolbar timers:12: out=1 look=0 looks=0
+cra://debug?toolbar=menuEnd
+wait 1
+cra://debug?toolbar=timers:13
+expect-log toolbar timers:13: out=0 look=0 looks=1
+wait 2
+cra://debug?toolbar=timers:14
+expect-log toolbar timers:14: out=0 look=0 looks=0
 cra://debug?toolbar=gone
 expect-log toolbar gone: floats=1 out=0 inset=0 page=[0-9]+/[0-9]+ short=0 barHidden=1 look=0
