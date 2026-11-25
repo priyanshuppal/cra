@@ -328,6 +328,8 @@ the error row's ✕. `cra://debug?instantLinks=<label>` logs the row and the las
 selected-row fill), plan (format/searches/counts), opened, fellback, and Today's and Pinned's items in order (a page's
 `result=` number, `+` between a split's panes, `"title"{…}` for a folder, `*` on the selected tab).
 `cra://debug?key=` now sends the key to the ⌘T bar's panel while it is open, so a scenario can press Shift-Return.
+With `&repeat=1&age=<ms>` it sends one repeat of the key held down, made that long ago, as a repeat that queued
+behind a slow tab switch arrives (`KeyRepeatGate`, `held-next-tab-stops`).
 
 `cra://debug?dragEnd=<text>` ends a drag of the window's tab whose URL holds the text, let go
 with nothing taking it, the way a drag out of the sidebar ends: outside every Cra window it opens

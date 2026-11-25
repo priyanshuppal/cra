@@ -1,0 +1,19 @@
+# Holding Next Tab (⌥⌘↓) and letting go stops where the key was let go. A tab switch can hold the main
+# thread for 30–100 ms and more while macOS repeats a held key every 33–83 ms, so repeats queued behind
+# slow switches and played out after the key came up, walking on for several tabs and loading each one.
+# A repeat older than one and a half repeat intervals is dropped (KeyRepeatGate). Ten Today tabs (the
+# newest first), the fifth selected; one press and five repeats a second old: one tab down, no further.
+budget rss=900 stalls50=40
+pace 0.5
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true}
+repeat 10 cra://open?url=${PAGE}?n=tab${i}x
+wait 2
+cra://debug?selectTab=n=tab5x
+wait 1
+cra://debug?selectedTab=start
+expect-log selected tab start: \S+\?n=tab5x$
+cra://debug?key=%EF%9C%81,125,1572864
+repeat 5 cra://debug?key=%EF%9C%81,125,1572864&repeat=1&age=1000
+wait 1.5
+cra://debug?selectedTab=held
+expect-log selected tab held: \S+\?n=tab4x$
