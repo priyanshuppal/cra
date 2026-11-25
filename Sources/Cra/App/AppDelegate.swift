@@ -299,9 +299,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // and Auto space themes follow NSApp's appearance), before the first window is made (#362).
         observeChanges(of: { [store] in store.settings.websiteAppearance }) { [weak self] appearance in
             CraCEFRuntime.setWebsiteAppearance(appearance.chromiumMode)
-            NSApp.appearance = appearance.forcesDark.flatMap { NSAppearance(named: $0 ? .darkAqua : .aqua) }
             // And every space's sidebar, its own Light or Dark included, as Arc's one setting does (#700).
+            // Set before NSApp's appearance, so the windows' redraw on its change already sees it.
             SystemAppearance.shared.setForced(appearance.forcesDark)
+            NSApp.appearance = appearance.forcesDark.flatMap { NSAppearance(named: $0 ? .darkAqua : .aqua) }
             self?.mainWindows.forEach { $0.refresh() }
         }
         // Chromium's Mode in chrome://settings/appearance is the same setting, saved as Cra's so the
@@ -1905,8 +1906,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
             // macOS' appearance as the app sees it (light, dark, or system to undo): Auto space
             // themes switch halves without changing the Mac's own setting (#155).
+            // With themeShown=<label> it logs that readout in the same main-thread turn, before anything
+            // deferred runs, so a part that redraws a turn late shows the old look.
             if let v = dict["systemAppearance"] {
                 NSApp.appearance = v == "system" ? nil : NSAppearance(named: v == "dark" ? .darkAqua : .aqua)
+                if let label = dict["themeShown"] { logThemeShown(label) }
                 return
             }
             // externalURL=<url>: a link as another app hands it over (Air Traffic Control, #258);
@@ -2268,30 +2272,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
                 return
             }
-            // themeShown=<label>: which half each window draws now (the space's theme, the window content
-            // and the sidebar), without redrawing first, so a missed macOS switch shows (#155).
-            if let label = dict["themeShown"] {
-                func sidebar(in v: NSView) -> SidebarView? {
-                    v as? SidebarView ?? v.subviews.lazy.compactMap { sidebar(in: $0) }.first
-                }
-                func side(_ dark: Bool) -> String { dark ? "dark" : "light" }
-                for m in mainWindows {
-                    let space = m.focusedSpace
-                    let drawn = m.window?.contentView.flatMap(sidebar(in:)).map { side($0.palette.isDark) } ?? "-"
-                    // material: the one-colour sidebar's material, Arc's light or dark one (#455); "-" for other themes;
-                    // glass-dark or glass-light with Settings ▸ Tabs ▸ Translucent sidebar (#366), for every theme.
-                    let material = m.shell.glass ? "glass-" + side(!m.shell.solidLightMaterial)
-                        : m.shell.solidBackdrop ? (m.shell.solidDarkGradient && !m.shell.solidLightMaterial ? "dark-gradient" : side(!m.shell.solidLightMaterial)) : "-"
-                    // seeThrough: the window shows the blurred desktop under the sidebar, through the material
-                    // (dark vibrant) or the backdrop layer (light vibrant, one colour), not an opaque fill (#643).
-                    NSLog("Cra theme shown %@: space=%@ follows=%d theme=%@ shell=%@ sidebar=%@ library=%@ material=%@ seeThrough=%d vibrant=%d intensity=%.2f",
-                          label, space.title, space.theme.followsSystem ? 1 : 0,
-                          side(space.theme.shown.isDark), side(m.shell.isDarkTheme), drawn, m.sidebarUI.libraryPage.map { "\($0)" } ?? "-", material,
-                          m.window?.isOpaque == false && !(m.shell.vibrancy.isHidden && m.shell.backdropHost.isHidden) ? 1 : 0,
-                          space.theme.shown.vibrant ? 1 : 0, space.theme.shown.intensity)
-                }
-                return
-            }
+            // themeShown=<label>: which half each window draws now (logThemeShown).
+            if let label = dict["themeShown"] { logThemeShown(label); return }
             // commandBarPick=<text>: the browser window's open bar commits its first row whose address holds
             // <text>, as ↩ on that row does (#645); logs the row's kind.
             if let text = dict["commandBarPick"] {
@@ -3456,6 +3438,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func pasteAsPlainText(_ sender: Any?) {
         guard let page = pageTakingPasteAndMatchStyle else { return }
         NSApp.sendAction(Self.chromiumPasteAndMatchStyle, to: page, from: sender)
+    }
+
+    /// cra://debug?themeShown: which half each window draws now (the space's theme, the window content
+    /// and the sidebar), without redrawing first, so a missed macOS switch shows (#155); card= is the
+    /// empty card's veil (none with a tab), which follows the appearance too (#669).
+    private func logThemeShown(_ label: String) {
+        func sidebar(in v: NSView) -> SidebarView? {
+            v as? SidebarView ?? v.subviews.lazy.compactMap { sidebar(in: $0) }.first
+        }
+        func side(_ dark: Bool) -> String { dark ? "dark" : "light" }
+        for m in mainWindows {
+            let space = m.focusedSpace
+            let drawn = m.window?.contentView.flatMap(sidebar(in:)).map { side($0.palette.isDark) } ?? "-"
+            // material: the one-colour sidebar's material, Arc's light or dark one (#455); "-" for other themes;
+            // glass-dark or glass-light with Settings ▸ Tabs ▸ Translucent sidebar (#366), for every theme.
+            let material = m.shell.glass ? "glass-" + side(!m.shell.solidLightMaterial)
+                : m.shell.solidBackdrop ? (m.shell.solidDarkGradient && !m.shell.solidLightMaterial ? "dark-gradient" : side(!m.shell.solidLightMaterial)) : "-"
+            // seeThrough: the window shows the blurred desktop under the sidebar, through the material
+            // (dark vibrant) or the backdrop layer (light vibrant, one colour), not an opaque fill (#643).
+            NSLog("Cra theme shown %@: space=%@ follows=%d theme=%@ shell=%@ sidebar=%@ library=%@ material=%@ seeThrough=%d vibrant=%d intensity=%.2f card=%@",
+                  label, space.title, space.theme.followsSystem ? 1 : 0,
+                  side(space.theme.shown.isDark), side(m.shell.isDarkTheme), drawn, m.sidebarUI.libraryPage.map { "\($0)" } ?? "-", material,
+                  m.window?.isOpaque == false && !(m.shell.vibrancy.isHidden && m.shell.backdropHost.isHidden) ? 1 : 0,
+                  space.theme.shown.vibrant ? 1 : 0, space.theme.shown.intensity, m.shell.emptyCardReadout)
+        }
     }
 
     /// The title of a menu row that says what it will do, as Arc's do: Hide Sidebar or Show Sidebar.

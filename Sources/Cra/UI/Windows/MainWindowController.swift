@@ -341,6 +341,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         installFloatingSidebar()
         observeStore()
         refresh()
+        // A switch of appearance redraws the backdrop in the turn the card's veil follows it, not a hop later.
+        NotificationCenter.default.addObserver(forName: SystemAppearance.changed, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
         shell.onDevToolsFrame = { [weak self] rect in
             guard let self, let id = self.browsers.visibleTabID else { return }
             self.positionDevToolsWindow(rect, tab: id)
