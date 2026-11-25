@@ -752,10 +752,12 @@ final class SpaceListView: NSView, NSDraggingSource {
         let freshSet = Set(fresh.map(ObjectIdentifier.init))
         for row in rows[near] {
             guard let v = views[row.key], freshSet.contains(ObjectIdentifier(v)) else { continue }
-            // Rows opening inside a folder drop in from just above; others fade in place.
-            v.frame = placed(row).offsetBy(dx: 0, dy: row.depth > 0 ? -6 : 0)
+            v.frame = placed(row).offsetBy(dx: 0, dy: -SidebarListMotion.insertOffset(depth: row.depth))
             v.alphaValue = 0
         }
+        // A leaving row goes behind the rows sliding into its place and is gone before they
+        // reach it (SidebarListMotion).
+        for v in gone { document.addSubview(v, positioned: .below, relativeTo: nil) }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = SidebarListMetrics.duration
             ctx.timingFunction = SidebarListMetrics.timing
@@ -765,7 +767,11 @@ final class SpaceListView: NSView, NSDraggingSource {
                 if v.frame != placed(row) { v.animator().frame = placed(row) }
                 if freshSet.contains(ObjectIdentifier(v)) { v.animator().alphaValue = 1 }
             }
-            for v in gone { v.animator().alphaValue = 0 }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = SidebarListMotion.removedFadeDuration
+                ctx.timingFunction = SidebarListMetrics.timing
+                for v in gone { v.animator().alphaValue = 0 }
+            }
         } completionHandler: {
             gone.forEach { $0.removeFromSuperview() }
         }
@@ -1467,9 +1473,12 @@ enum SidebarListMetrics {
     /// The ring starts this far before a row's favicon; the line stops this far inside the row.
     static let dropLead: CGFloat = 2
     static let dropTrail: CGFloat = 3
-    /// SwiftUI's .snappy(duration: 0.22, extraBounce: 0), which the list's changes used.
-    static let duration: TimeInterval = 0.22
-    static let timing = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
+    /// The list's changes: SidebarListMotion's duration and curve.
+    static let duration = SidebarListMotion.duration
+    static let timing: CAMediaTimingFunction = {
+        let c = SidebarListMotion.curve
+        return CAMediaTimingFunction(controlPoints: Float(c.0), Float(c.1), Float(c.2), Float(c.3))
+    }()
 }
 
 /// The scroll view of every list in the sidebar: a space's tabs and the Library's pages. Space

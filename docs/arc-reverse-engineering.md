@@ -1638,6 +1638,20 @@ carries `history.length`.
 - Cra: CraCore SidebarRowPress (`selectsOnPress`: a plain single press on a tab row), `NSView.springPress`.
   Picks, renames and a pinned tab's icon away from home act on the release.
 
+### Rows leaving and arriving (Arc 1.174.3, 26 Nov 2026, static: disassembly)
+
+- [O] The arm64 slice calls `removeItemsAtIndexes:inParent:withAnimation:`,
+  `insertItemsAtIndexes:inParent:withAnimation:` and the row variants once each (objc stubs resolved
+  through `__objc_selrefs`). The outline-diff caller (near 0x10096ecd0) passes inserts `w4 = 1`
+  (`.effectFade`) and removes `0x11` (`[.effectFade, .slideUp]`) when the diff holds more than one change,
+  `1` otherwise.
+- [O] The diff runs inside `NSAnimationContext.runAnimationGroup` with `duration = 0.12` (the double
+  0x3FBEB851EB851EB8 at 0x10097080c) and no timing function, between `beginUpdates` and `endUpdates` on the
+  same outline ivar. `expandItem:` and `collapseItem:` go through `outline.animator()`.
+- Cra: CraCore SidebarListMotion. A leaving row fades over 0.06 s behind the rows sliding into its place;
+  arriving rows fade in where they land (no 6 pt drop). The shift stays on Cra's 0.22 s snappy curve, not
+  Arc's 0.12 s.
+
 ### Backdrop-layer blur for light vibrant themes (25 Oct 2026, final)
 
 The system materials could not reproduce Arc's intercept and slope together, so
