@@ -31,3 +31,27 @@ struct SidebarMotionTests {
         #expect(SidebarMotion.progress(at: 1) > 1 - 1e-9)
     }
 }
+
+/// What the ⌘S slide's first frame shows once it is timed from that frame (SettleClock): one refresh's way.
+struct SidebarMotionFirstFrameTests {
+    /// At 120 Hz one frame in is under a quarter of the travel; at 60 Hz it is Arc's first frame, 42–44 % on
+    /// Arc 1.172.1's 60 fps recordings (SidebarMotion). Timed from the call, a first tick a refresh or two late plus
+    /// the ⌘S handler's work showed two or three of the ten 120 Hz frames' travel at once.
+    @Test func theFirstFrameGoesOneRefreshsWay() {
+        #expect(SidebarMotion.progress(at: 1.0 / 120) < 0.25)
+        let at60 = SidebarMotion.progress(at: 1.0 / 60)
+        #expect(at60 >= 0.40 && at60 <= 0.46)
+        // Drawn three refreshes late at 120 Hz and timed from the call, the first frame shows over half the way.
+        #expect(SidebarMotion.progress(at: 3.0 / 120) > 0.5)
+    }
+
+    /// The slide's clock starts one refresh before its first frame, however late that frame comes.
+    @Test func aLateFirstFrameStillStartsTheSlideOneFrameIn() {
+        let frame = 1.0 / 120
+        var clock = SettleClock(started: 50)
+        let t = clock.elapsed(atFrame: 50 + 0.08 + frame, interval: frame)
+        #expect(abs(t - frame) < 1e-9)
+        #expect(SidebarMotion.progress(at: t) < 0.25)
+        #expect(abs(clock.elapsed(atFrame: 50 + 0.08 + 2 * frame, interval: frame) - 2 * frame) < 1e-9)
+    }
+}

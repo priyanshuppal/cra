@@ -3070,6 +3070,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // spaceCreation=state|type:<name>|icon:<emoji>|symbol:<name>|theme:<n>|profile:<n>|engine:<keyword>|create|cancel: Arc's
             // Create a Space page, one step on it, and what it and the dock then show.
             if let step = dict["spaceCreation"] { main.debugSpaceCreation(step); return }
+            // slideStall=<ms>: ⌘S, then the main thread held that long before the slide's first frame, as a busy
+            // ⌘S handler holds it.
+            if let ms = dict["slideStall"].flatMap(Int.init) {
+                main.toggleSidebar()
+                main.refresh() // the slide starts now, not on the store's next turn, so the stall falls after the call
+                Thread.sleep(forTimeInterval: Double(min(max(ms, 0), 2000)) / 1000)
+                return
+            }
             if let g = dict["swipe"]?.split(separator: ",").compactMap({ Double($0) }), g.count == 2 {
                 // &releaseStall=<ms>: the main thread held that long after the release, as a busy space switch holds it (#613).
                 main.debugSpaceSwipe(dx: g[0], steps: Int(g[1]), stall: Int(dict["releaseStall"] ?? "") ?? 0)

@@ -1372,7 +1372,7 @@ final class ShellView: NSView {
         if freeze { onAnimatePaneFrames?(webTargets, duration, timing) }
         // Real frames each display frame: a layer animation left the toolbar and page at their final size.
         sidebarSlide = SidebarSlide(fromSidebar: sidebarHost.frame, toSidebar: target.sidebar, fromContent: contentContainer.frame,
-                                    toContent: target.content, start: CACurrentMediaTime(), duration: duration,
+                                    toContent: target.content, clock: SettleClock(started: CACurrentMediaTime()), duration: duration,
                                     visible: visible, floating: floating, fullscreen: fullscreen)
         guard duration > 0, window != nil else { return finishSidebarSlide() }
         if sidebarSlideLink == nil {
@@ -1381,15 +1381,19 @@ final class ShellView: NSView {
             sidebarSlideLink = link
         }
         // A display link stops when the window leaves the screen; the slide still ends.
-        let id = sidebarSlide!.start
+        let id = sidebarSlide!.clock.started
         DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.25) { [weak self] in
-            if self?.sidebarSlide?.start == id { self?.finishSidebarSlide() }
+            if self?.sidebarSlide?.clock.started == id { self?.finishSidebarSlide() }
         }
     }
 
     private struct SidebarSlide {
         let fromSidebar: NSRect, toSidebar: NSRect, fromContent: NSRect, toContent: NSRect
-        let start: CFTimeInterval, duration: TimeInterval
+        /// Timed from the first frame drawn, not from ⌘S (SettleClock, as the space settle since #613): the
+        /// display link's first tick lands a refresh or two after the call, plus whatever the ⌘S handler still
+        /// does, and timed from the call that much of the 85 ms was gone before anything drew.
+        var clock: SettleClock
+        let duration: TimeInterval
         let visible: Bool, floating: Bool, fullscreen: Bool
     }
 
@@ -1411,10 +1415,16 @@ final class ShellView: NSView {
     var onSidebarSlideFrame: (() -> Void)?
 
     @objc private func stepSidebarSlide(_ link: CADisplayLink) {
-        guard let s = sidebarSlide else { return finishSidebarSlide() }
-        let t = link.targetTimestamp - s.start
+        guard var s = sidebarSlide else { return finishSidebarSlide() }
+        let first = s.clock.origin == nil
+        let t = s.clock.elapsed(atFrame: link.targetTimestamp, interval: link.targetTimestamp - link.timestamp)
+        sidebarSlide = s
         guard t < s.duration else { return finishSidebarSlide() }
         let p = SidebarMotion.progress(at: t, duration: s.duration)
+        if first {
+            let late = Int(((link.targetTimestamp - s.clock.started) * 1000).rounded())
+            CraLog.note("sidebar slide: the first frame went \(Int((p * 100).rounded())) % of the way, \(late) ms after the call")
+        }
         let content = SidebarSlidePage.frame(from: s.fromContent, to: s.toContent, progress: p)
         if !sidebarDetached { sidebarHost.frame = SidebarSlidePage.frame(from: s.fromSidebar, to: s.toSidebar, progress: p) }
         contentContainer.frame = content
