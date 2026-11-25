@@ -553,7 +553,7 @@ final class ShellView: NSView {
             h.orientation = orientation
             let index = handles.count
             h.onDragBegan = { [weak self] in self?.beginPaneDrag(index) }
-            h.onDrag = { [weak self] d in self?.dragPane(index, delta: d) }
+            h.onDrag = { [weak self] d, t in self?.dragPane(index, delta: d, at: t) }
             h.onDragEnded = { [weak self] in self?.endPaneDrag() }
             h.onDoubleClick = { [weak self] in self?.resetPaneWidths() }
             contentContainer.addSubview(h, positioned: .below, relativeTo: sidePanel)
@@ -778,20 +778,40 @@ final class ShellView: NSView {
     private var dragStartFactors: [UUID: CGFloat] = [:]
     /// Whether the dragged divider holds two panes at half each.
     private var paneDragSnapped = false
+    /// The cards follow every mouse move; the page windows, which Chromium lays out on each
+    /// resize, at most 30 times a second and with the last frame when the divider is let go.
+    private var paneResizeThrottle = PaneResizeThrottle()
+    private var paneDragging = false
+    /// A trailing resize is on its way for a frame held back (Arc's resizeTimer): a divider held
+    /// still after a fast move still gets its pages resized.
+    private var paneResizeTrailing = false
+    /// Page-window resizes during the current or last divider drag (`cra://debug?dividerDrag`).
+    private var paneDragResizes = 0
 
     private func beginPaneDrag(_ index: Int) {
         dragStartFactors = paneFactors
         paneDragSnapped = false
+        paneResizeThrottle = PaneResizeThrottle()
+        paneDragging = true
+        paneDragResizes = 0
         for c in paneCards { c.frozenWebBounds = nil }
         onPaneResizeBegan?()
     }
 
-    private func dragPane(_ index: Int, delta: CGFloat) {
+    private func dragPane(_ index: Int, delta: CGFloat, at time: TimeInterval) {
         let ids = paneCards.map(\.tabID)
         let panes = ids.map { SplitPaneLayout.Pane(id: $0, factor: dragStartFactors[$0] ?? (1 / CGFloat(max(1, ids.count)))) }
         let layout = SplitPaneLayout(panes: panes, orientation: splitOrientation, containerSize: paneArea(in: contentContainer.bounds).size)
         let drag = layout.dragging(dividerAfter: index, by: delta)
         paneFactors = drag.factors
+        if paneResizeThrottle.shouldApply(now: time) {
+            for c in paneCards { c.frozenWebBounds = nil }
+        } else {
+            // The pages keep the size they last had and their cards move around them: a card's
+            // page colour fills its moving edge until the next resize, as during setDropPreview.
+            freezePages()
+            scheduleHeldPaneResize()
+        }
         layoutContentChildren()
         // Arc's tick as the divider catches the middle (PaneResizeState.isCenterSnapped).
         if SnapTick.fires(was: paneDragSnapped, now: drag.snapped) { Haptics.play(.generic) }
@@ -800,14 +820,34 @@ final class ShellView: NSView {
 
     /// `cra://debug?dividerDrag=<pt>,<pt>,…`: a drag of the first divider through those offsets from
     /// where it starts, as its handle sends them, then let go.
+    /// The steps are 4 ms apart, faster than a 120 Hz mouse, and it logs how many times the page
+    /// windows were resized: `dividerDrag: pageResizes=<n>`.
     func debugDragDivider(_ deltas: [CGFloat]) {
         guard paneCards.count > 1 else { return }
         beginPaneDrag(0)
-        for d in deltas { dragPane(0, delta: d) }
+        let start = ProcessInfo.processInfo.systemUptime
+        for (i, d) in deltas.enumerated() { dragPane(0, delta: d, at: start + Double(i) * 0.004) }
         endPaneDrag()
+        CraLog.note("dividerDrag: pageResizes=\(paneDragResizes)")
+    }
+
+    private func scheduleHeldPaneResize() {
+        guard !paneResizeTrailing else { return }
+        paneResizeTrailing = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + PaneResizeThrottle.interval) { [weak self] in self?.applyHeldPaneResize() }
+    }
+
+    private func applyHeldPaneResize() {
+        paneResizeTrailing = false
+        guard paneDragging, paneResizeThrottle.pending else { return }
+        // NSEvent.timestamp counts from boot, as systemUptime does.
+        if paneResizeThrottle.shouldApply(now: ProcessInfo.processInfo.systemUptime) { thawPages() } else { scheduleHeldPaneResize() }
     }
 
     private func endPaneDrag() {
+        // The frame the divider was let go at always reaches the pages.
+        if paneResizeThrottle.flush() { thawPages() }
+        paneDragging = false
         onPaneResizeEnded?(paneFactors)
     }
 
@@ -1414,7 +1454,10 @@ final class ShellView: NSView {
             findHost.isHidden = !findVisible
             findHost.frame = FindBarPlacement.frame(page: wb, size: size, inset: inset, toolbarOverPage: floatingToolbarCover)
         }
-        if !animatingPanes, paneCards.allSatisfy({ $0.frozenWebBounds == nil }) { onPaneFrames?(paneWebFrames(layout)) }
+        if !animatingPanes, paneCards.allSatisfy({ $0.frozenWebBounds == nil }) {
+            if paneDragging { paneDragResizes += 1 }
+            onPaneFrames?(paneWebFrames(layout))
+        }
     }
 
     private func layoutSidePanel(in cb: NSRect) {
