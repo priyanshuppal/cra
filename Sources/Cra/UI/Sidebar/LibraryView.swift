@@ -2,10 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Library's pages Cra has, in the order of Arc's rail (which also lists Easels and Boosts).
-enum LibraryPage: String, CaseIterable {
-    case media, downloads, easels, spaces, boosts, archive
-
+extension LibraryPage {
     var title: String {
         switch self {
         case .media: "Media"
@@ -549,7 +546,7 @@ private final class LibraryListView: NSView, NSTextFieldDelegate, NSTableViewDat
         case .media:
             guard store.settings.mediaLibraryEnabled else {
                 showMediaCard()
-                empty.show(symbol: "photo.on.rectangle", title: "", detail: nil)
+                empty.show(LibraryEmptyState(symbol: "photo.on.rectangle", title: "", detail: nil))
                 break
             }
             // Read again whenever the page shows, a search changes or the folders change; the scan is
@@ -563,8 +560,7 @@ private final class LibraryListView: NSView, NSTextFieldDelegate, NSTableViewDat
             let all = MediaScanner.shared.files
             let shown = MediaLibrary.shown(all, query: query, hidden: Set(store.settings.mediaHidden))
             out = MediaLibrary.rows(shown).map { .media($0) }
-            empty.show(symbol: "photo.on.rectangle", title: all.isEmpty ? "Nothing here yet!" : "No matches",
-                       detail: all.isEmpty ? "Screenshots, pictures and videos in the folders you show appear here." : nil)
+            empty.show(LibraryEmptyState.text(page: .media, isEmpty: all.isEmpty, query: query))
         case .downloads:
             // Running, failed and cancelled downloads too, as in the tray (#245).
             let all = DownloadHistory.shared.library(query: "")
@@ -576,25 +572,19 @@ private final class LibraryListView: NSView, NSTextFieldDelegate, NSTableViewDat
                 out.append(.header(label))
                 out += entries.map { .download($0) }
             }
-            // Arc's words.
-            empty.show(symbol: "arrow.down.circle", title: all.isEmpty ? "Nothing here yet!" : "No matches",
-                       detail: all.isEmpty ? "Come back after you’ve found some cool stuff to save." : nil)
+            empty.show(LibraryEmptyState.text(page: .downloads, isEmpty: all.isEmpty, query: query))
         case .easels:
             let all = EaselFiles.all()
             let shown = needle.isEmpty ? all : all.filter { $0.title.lowercased().contains(needle) }
             // Arc: one grid, newest edit first, two to a row, no day headers.
             let entries = shown.map { EaselEntry(id: $0.id, title: $0.title, edited: $0.edited) }
             out = stride(from: 0, to: entries.count, by: 2).map { .easels(Array(entries[$0..<min($0 + 2, entries.count)])) }
-            // Arc's empty Easels page: "Out of ideas!"
-            empty.show(symbol: "pencil.and.scribble", title: all.isEmpty ? "Out of ideas!" : "No matches",
-                       detail: all.isEmpty ? "Choose File ▸ New Easel to create a new Easel." : nil)
+            empty.show(LibraryEmptyState.text(page: .easels, isEmpty: all.isEmpty, query: query))
         case .boosts:
             let all = BoostStore.shared.boosts
             let shown = needle.isEmpty ? all : all.filter { $0.name.lowercased().contains(needle) || $0.host.contains(needle) }
             out = shown.sorted { $0.host < $1.host }.map { .boost($0) }
-            // Arc's empty Boosts page.
-            empty.show(symbol: "paintbrush.pointed", title: all.isEmpty ? "Nothing Boosted Yet!" : "No matches",
-                       detail: all.isEmpty ? "Type “New Boost” in the command bar on any site to make your own." : nil)
+            empty.show(LibraryEmptyState.text(page: .boosts, isEmpty: all.isEmpty, query: query))
         case .spaces:
             break
         case .archive:
@@ -606,8 +596,7 @@ private final class LibraryListView: NSView, NSTextFieldDelegate, NSTableViewDat
                 out.append(.header(label))
                 out += entries.map { .archived($0) }
             }
-            empty.show(symbol: "archivebox", title: store.archive.isEmpty ? "Nothing here yet!" : "No matches",
-                       detail: store.archive.isEmpty ? "Tabs you close end up here." : nil)
+            empty.show(LibraryEmptyState.text(page: .archive, isEmpty: store.archive.isEmpty, query: query))
         }
         rows = out
         needsLayout = true
@@ -1273,19 +1262,61 @@ private final class LibraryEmptyView: NSView {
 
     override var isFlipped: Bool { true }
 
-    func show(symbol: String, title text: String, detail d: String?) {
-        glyph.image = SidebarSymbols.image(symbol, size: 30, weight: .light)
-        title.stringValue = text
-        detail.stringValue = d ?? ""
-        detail.isHidden = d == nil
+    private var parts: [LibraryEmptyState.Part]?
+
+    /// Nil (Spaces) leaves it as it was: the page never shows it.
+    func show(_ state: LibraryEmptyState?) {
+        guard let state else { return }
+        glyph.image = SidebarSymbols.image(state.symbol, size: 30, weight: .light)
+        title.stringValue = state.title
+        parts = state.detail
+        detail.isHidden = state.detail == nil
         refresh()
     }
 
     private func refresh() {
         glyph.contentTintColor = ink.withAlphaComponent(0.45)
         title.textColor = ink.withAlphaComponent(0.9)
-        detail.textColor = ink.withAlphaComponent(0.7)
+        let colour = ink.withAlphaComponent(0.7)
+        detail.attributedStringValue = Self.detail(parts ?? [], colour: colour)
         needsLayout = true
+    }
+
+    /// The detail's words, with Arc's inline ✕ (the archive's hint) as the sidebar's xmark in the same ink.
+    private static func detail(_ parts: [LibraryEmptyState.Part], colour: NSColor) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: 14)
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: colour, .paragraphStyle: centred]
+        let out = NSMutableAttributedString()
+        for part in parts {
+            switch part {
+            case .text(let s):
+                out.append(NSAttributedString(string: s, attributes: attrs))
+            case .closeButton:
+                let symbol = SidebarSymbols.image("xmark", size: 11, weight: .bold).map { Self.inked($0, colour) }
+                let mark = NSTextAttachment()
+                mark.image = symbol
+                if let size = symbol?.size {
+                    // Centred on the capitals, not sat on the baseline.
+                    mark.bounds = NSRect(x: 0, y: ((font.capHeight - size.height) / 2).rounded(), width: size.width, height: size.height)
+                }
+                let run = NSMutableAttributedString(attachment: mark)
+                run.addAttributes(attrs, range: NSRange(location: 0, length: run.length))
+                out.append(run)
+            }
+        }
+        return out
+    }
+
+    /// A template symbol filled with one colour (a text attachment draws a template image black).
+    private static func inked(_ image: NSImage, _ colour: NSColor) -> NSImage {
+        NSImage(size: image.size, flipped: false) { r in
+            image.draw(in: r)
+            colour.set()
+            r.fill(using: .sourceAtop)
+            return true
+        }
     }
 
     override func layout() {
