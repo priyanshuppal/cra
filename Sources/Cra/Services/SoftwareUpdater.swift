@@ -194,7 +194,7 @@ final class SoftwareUpdater: NSObject {
     private(set) var replacedBy: String?
     /// This copy's version, read before anything could replace the bundle.
     @ObservationIgnored private var runningBundle: InstalledBundle.Version?
-    @ObservationIgnored private var bundleCheck: ScheduledWork?
+    @ObservationIgnored private var bundleWatch: BundleReplacementWatch?
 
     /// Development builds too: scripts/build.sh replaces build/Cra.app under a running copy the same way.
     private func watchInstalledBundle(clock: Scheduler) {
@@ -202,13 +202,13 @@ final class SoftwareUpdater: NSObject {
         runningBundle = (info?["CFBundleShortVersionString"] as? String).flatMap { short in
             (info?["CFBundleVersion"] as? String).map { InstalledBundle.Version(short: short, build: $0) }
         }
-        bundleCheck = clock.every(30) { [weak self] in self?.checkInstalledBundle() }
+        bundleWatch = BundleReplacementWatch(bundle: Bundle.main.bundleURL, clock: clock) { [weak self] in self?.checkInstalledBundle() }
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkInstalledBundle() }
         }
     }
 
-    /// Reads Cra.app's Info.plist on disk: every 30 s, when Cra comes forward, and at once when a page's
+    /// Reads Cra.app's Info.plist on disk: when it changes there (BundleReplacementWatch), when Cra comes forward, and at once when a page's
     /// process ended (PerfCEF): one that can't start is how a replaced bundle shows itself first.
     func checkInstalledBundle() {
         guard let runningBundle else { return }

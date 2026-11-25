@@ -45,18 +45,40 @@ final class LiveFolderManager {
             self?.repositories[id] = nil
             self?.refresh(id, force: true)
         }
-        timer = store.clock.every(15) { [weak self] in
-            self?.store?.expireLiveItems(olderThan: Self.retention)
-            self?.refreshStale()
-        }
+        syncPass()
         // Dia's windowFocus trigger. App activation makes a window key too.
         NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.refreshStale() }
+        }
+        // The pass stops in the background once nothing waits to expire (LiveFolderPass);
+        // coming back catches up at once.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.pass() }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.syncPass() }
         }
         Task {
             await LiveFolderPluginStore.shared.reload()
             await migrateFolders()
             refreshStale()
+        }
+    }
+
+    private func pass() {
+        store?.expireLiveItems(olderThan: Self.retention)
+        refreshStale()
+        syncPass()
+    }
+
+    /// Starts or stops the 15-second pass for whether Cra is active and a tab waits to expire.
+    private func syncPass() {
+        guard let store else { return }
+        if LiveFolderPass.runs(appActive: NSApp.isActive, itemsWaitingToExpire: store.hasLiveItemsWaitingToExpire) {
+            if timer == nil { timer = store.clock.every(LiveFolderPass.interval) { [weak self] in self?.pass() } }
+        } else {
+            timer?.cancel()
+            timer = nil
         }
     }
 
@@ -166,6 +188,8 @@ final class LiveFolderManager {
             defer {
                 refreshing.remove(id)
                 if pendingRefresh.remove(id) != nil { refresh(id, force: true) }
+                // An answer landing in the background can leave a tab waiting to expire.
+                syncPass()
             }
             do {
                 var metadata = configuration
