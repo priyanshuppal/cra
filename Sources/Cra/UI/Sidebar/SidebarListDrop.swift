@@ -35,55 +35,48 @@ struct SidebarListDrop: Equatable {
 }
 
 /// Scrolls a space's list while a drag hovers near its top or bottom edge, so
-/// with a long pinned list everything past the fold (Today included) stays in reach.
+/// with a long pinned list everything past the fold (Today included) stays in reach
+/// (DragAutoscroll). It steps once per display frame, so the list moves on every frame
+/// at 120 Hz as at 60.
 @MainActor
-final class DragAutoscroller {
-    /// Edge band, and the speed at the very edge in points per second.
-    static let band: CGFloat = 48
-    static let maxSpeed: CGFloat = 900
-
+final class DragAutoscroller: NSObject {
     weak var anchor: NSView?
-    private var timer: Timer?
+    private var link: CADisplayLink?
     private var lastTick: CFTimeInterval = 0
 
     /// Starts or stops scrolling for where the pointer is now.
     func update() {
         guard speed() != 0 else { stop(); return }
-        guard timer == nil else { return }
-        lastTick = CACurrentMediaTime()
-        let t = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
-        }
-        // A drag keeps the run loop in event-tracking mode.
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
+        guard link == nil, let anchor else { return }
+        lastTick = 0
+        // In .common mode, since a drag keeps the run loop in event-tracking mode.
+        let l = anchor.displayLink(target: self, selector: #selector(tick(_:)))
+        l.add(to: .main, forMode: .common)
+        link = l
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        link?.invalidate()
+        link = nil
     }
 
     private func speed() -> CGFloat {
         guard NSEvent.pressedMouseButtons != 0, let sv = anchor?.enclosingScrollView, let window = sv.window else { return 0 }
         let p = sv.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         let fromTop = sv.isFlipped ? p.y : sv.bounds.height - p.y
-        let fromBottom = sv.bounds.height - fromTop
-        guard p.x >= 0, p.x <= sv.bounds.width, fromTop >= 0, fromBottom >= 0 else { return 0 }
-        if fromTop < Self.band { return -Self.maxSpeed * (1 - fromTop / Self.band) }
-        if fromBottom < Self.band { return Self.maxSpeed * (1 - fromBottom / Self.band) }
-        return 0
+        guard p.x >= 0, p.x <= sv.bounds.width else { return 0 }
+        return DragAutoscroll.speed(fromTop: fromTop, fromBottom: sv.bounds.height - fromTop)
     }
 
-    private func tick() {
-        let now = CACurrentMediaTime()
-        let dt = min(now - lastTick, 0.05)
-        lastTick = now
+    @objc private func tick(_ link: CADisplayLink) {
+        // The first frame covers one frame's length; later ones the time since the last.
+        let dt = lastTick == 0 ? link.targetTimestamp - link.timestamp : link.targetTimestamp - lastTick
+        lastTick = link.targetTimestamp
         let v = speed()
         guard v != 0, let sv = anchor?.enclosingScrollView else { stop(); return }
         let clip = sv.contentView
         var origin = clip.bounds.origin
-        origin.y += v * dt * (sv.documentView?.isFlipped ?? true ? 1 : -1)
+        origin.y += DragAutoscroll.step(speed: v, dt: dt) * (sv.documentView?.isFlipped ?? true ? 1 : -1)
         let r = clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size))
         guard r.origin != clip.bounds.origin else { return }
         clip.scroll(to: r.origin)
