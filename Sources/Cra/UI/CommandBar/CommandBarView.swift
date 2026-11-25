@@ -38,6 +38,8 @@ final class CommandBarView: NSView {
     func deleteSelectedSuggestion() { controller.delete() }
     /// cra://debug?commandBarDelete (#779): the n-th row's ✕ in screen points.
     func debugDeletePoint(_ i: Int) -> NSPoint? { rows.indices.contains(i) ? rows[i].deletePoint : nil }
+    /// cra://debug?commandBarRowPoint: the n-th row's centre in screen points.
+    func debugRowPoint(_ i: Int) -> NSPoint? { rows.indices.contains(i) ? rows[i].centrePoint : nil }
     private var syncQueued = false
     private var attached = false
     /// Arc's address panel from the sidebar (#663): a 45 pt input row, 13 pt type, titles only.
@@ -274,6 +276,10 @@ final class CommandBarView: NSView {
                 guard let self, let r, let i = self.rows.firstIndex(where: { $0 === r }) else { return }
                 self.controller.hover(row: i)
             }
+            r.onUnhover = { [weak self, weak r] in
+                guard let self, let r, let i = self.rows.firstIndex(where: { $0 === r }) else { return }
+                self.controller.unhover(row: i)
+            }
             r.onClick = { [weak self, weak r] in
                 guard let self, let r, let i = self.rows.firstIndex(where: { $0 === r }), self.controller.result.items.indices.contains(i) else { return }
                 self.controller.commit(self.controller.result.items[i])
@@ -294,7 +300,7 @@ final class CommandBarView: NSView {
                 let incognito = c.store.window().isIncognito || s.tabID.map(c.store.isIncognito(item:)) == true
                 SiteIconLoader.shared.want(.init(url: url, iconKey: s.faviconKey, preset: s.isPresetSite, incognito: incognito), into: favicons)
             }
-            r.show(s, icon: icon, selected: i == c.selectedIndex, highlight: highlight,
+            r.show(s, icon: icon, fill: CommandBarRowFill(row: i, selected: c.selectedIndex, hovered: c.hoveredIndex), highlight: highlight,
                    otherSpace: s.spaceID.flatMap { $0 != c.focusedSpaceID && s.tabID != nil ? c.spaceName($0) : nil },
                    dark: dark, compact: compact, deletable: c.canDelete(row: i))
         }
@@ -570,6 +576,7 @@ enum FaviconMarks {
 
 final class CommandBarRowView: NSView {
     var onHover: () -> Void = {}
+    var onUnhover: () -> Void = {}
     var onClick: () -> Void = {}
     /// Arc's ✕ on a visited page's row (#779).
     var onDelete: () -> Void = {}
@@ -582,7 +589,7 @@ final class CommandBarRowView: NSView {
     private let arrow = NSImageView()
     /// Arc's Delete Suggestion (#779): a 24 pt ✕ tile where the arrow goes, on the row the pointer is on.
     private let deleteTile = CommandBarDeleteTile()
-    private var shown: (Suggestion, NSImage?, Bool, NSColor, String?, Bool, Bool, Bool)?
+    private var shown: (Suggestion, NSImage?, CommandBarRowFill, NSColor, String?, Bool, Bool, Bool)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -620,13 +627,21 @@ final class CommandBarRowView: NSView {
     var debugIcon: String { "tile=\(iconBox.isHidden || icon.isHidden ? 0 : 1) tinted=\(icon.contentTintColor != nil && icon.image?.isTemplate == true ? 1 : 0)" }
 
     /// `compact`: Arc's address panel from the sidebar (#663), 13 pt titles without their address.
-    /// `deletable`: a visited page's row, which shows Arc's ✕ while selected (#779).
-    func show(_ s: Suggestion, icon image: NSImage?, selected: Bool, highlight: NSColor, otherSpace: String?, dark: Bool, compact: Bool = false,
+    /// `deletable`: a visited page's row, which shows Arc's ✕ while selected or hovered (#779).
+    /// `fill`: selected (the space's colour), hovered (Arc's faint hover fill, the row's ink unchanged) or neither.
+    func show(_ s: Suggestion, icon image: NSImage?, fill: CommandBarRowFill, highlight: NSColor, otherSpace: String?, dark: Bool, compact: Bool = false,
               deletable: Bool = false) {
-        if let o = shown, o.0 == s, o.1 === image, o.2 == selected, o.3 == highlight, o.4 == otherSpace, o.5 == dark, o.6 == compact,
+        if let o = shown, o.0 == s, o.1 === image, o.2 == fill, o.3 == highlight, o.4 == otherSpace, o.5 == dark, o.6 == compact,
            o.7 == deletable { return }
-        shown = (s, image, selected, highlight, otherSpace, dark, compact, deletable)
-        layer?.backgroundColor = (selected ? highlight : .clear).cgColor
+        shown = (s, image, fill, highlight, otherSpace, dark, compact, deletable)
+        let selected = fill == .selection
+        let hover = CommandBarTones.hover(dark: dark)
+        let background: NSColor = switch fill {
+        case .selection: highlight
+        case .hover: CommandBarView.ink(hover.rgb, hover.alpha)
+        case .none: .clear
+        }
+        layer?.backgroundColor = background.cgColor
         // Selection changes all foregrounds too, including when reusable rows keep their content.
         // Arc 1.172.1 live (dark): titles (214,214,214), "Switch to Tab" and URLs (117,117,117), white when selected.
         let ink: NSColor = selected ? .white : (dark ? NSColor(white: 0.84, alpha: 1) : NSColor.black.withAlphaComponent(0.85))
@@ -678,13 +693,15 @@ final class CommandBarRowView: NSView {
         arrow.isHidden = !isTab
         trailing.textColor = selected ? .white : secondaryInk
         // Arc: the arrow (189,189,189) on a white-5 % tile; selected, the row's colour on a white tile.
-        arrow.contentTintColor = selected ? highlight.withAlphaComponent(1) : (dark ? NSColor.white.withAlphaComponent(0.72) : NSColor.labelColor.withAlphaComponent(0.65))
-        arrowBox.layer?.backgroundColor = (selected ? NSColor.white : NSColor.labelColor.withAlphaComponent(0.05)).cgColor
-        deleteTile.isHidden = !(deletable && selected && !isTab)
+        let arrowInk = selected ? highlight.withAlphaComponent(1) : (dark ? NSColor.white.withAlphaComponent(0.72) : NSColor.labelColor.withAlphaComponent(0.65))
+        let arrowTile = (selected ? NSColor.white : NSColor.labelColor.withAlphaComponent(0.05)).cgColor
+        arrow.contentTintColor = arrowInk
+        arrowBox.layer?.backgroundColor = arrowTile
+        deleteTile.isHidden = !SuggestionDeletion.showsMark(deletable: deletable && !isTab, fill: fill)
         // Arc's ✕ is the arrow's tile (the reporter's Arc 1.172 capture: same 24 pt tile, same place, the arrow's
-        // unselected look on a hovered row), so on the selected row it takes the arrow's selected look.
-        deleteTile.contentTintColor = highlight.withAlphaComponent(1)
-        deleteTile.layer?.backgroundColor = NSColor.white.cgColor
+        // unselected look on a hovered row), and on the selected row it takes the arrow's selected look.
+        deleteTile.contentTintColor = arrowInk
+        deleteTile.layer?.backgroundColor = arrowTile
         needsLayout = true
     }
 
@@ -746,9 +763,17 @@ final class CommandBarRowView: NSView {
 
     override func mouseEntered(with event: NSEvent) { onHover() }
     override func mouseMoved(with event: NSEvent) { onHover() }
+    override func mouseExited(with event: NSEvent) { onUnhover() }
     override func mouseDown(with event: NSEvent) {}
     override func mouseUp(with event: NSEvent) {
         if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick() }
+    }
+
+    /// cra://debug?commandBarRowPoint: the row's centre in screen points, nil when it's hidden.
+    var centrePoint: NSPoint? {
+        guard !isHidden, let window else { return nil }
+        let r = window.convertToScreen(convert(bounds, to: nil))
+        return NSPoint(x: r.midX, y: r.midY)
     }
 }
 

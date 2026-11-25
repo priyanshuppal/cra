@@ -195,8 +195,18 @@ Legend: [O] observed in shipped artifact or data file, [I] inference, [U] unknow
   keeps ⌘T as ⌘L (CraCore `CommandBarOpening`; scenario peek-command-t).
   The row view `CommandBar.CommandBarSuggestionRowView` keeps `isHovered` and a `trackingArea`, and its `Theme` has
   a `hoveredColor` (asset `CommandBarRowHoverBackgroundColor`) beside the selection colour, so hover in Arc's bar
-  is its own fill and not the selection. Cra's hover selects the row, and since #382 only after the pointer moves
-  from where it was when the rows last changed (CraCore `HoverGate`). Not done: Arc's separate hover fill.
+  is its own fill and not the selection. Cra's hover selected the row, and since #382 only after the pointer moves
+  from where it was when the rows last changed (CraCore `HoverGate`).
+- [S] Hover fill in the bar (26 Nov 2026, Arc 1.174.3: `assetutil --info` on ARC_CommandBar.bundle's Assets.car, and
+  the arm64 slice's `__swift5_reflstr`). `CommandBarRowHoverBackgroundColor` is sRGB black at 0.05 (light) and white
+  at 0.05 (dark). The row view's fields run `cornerRadius onClick iconView backgroundView iconShadow
+  selectionHighlightLayer isHovered trackingArea themeSubscription theme`, its `Theme` `onMouseDownOverride
+  selectedColor hoveredColor`: the row tracks the pointer and takes its own click, and the selection is a layer
+  the bar sets; no hovered index sits beside the bar's `selectedIndex`, so the arrows go on from the selection. Cra
+  (CraCore `CommandBarTones.hover`, `CommandBarRowFill`): the row under the pointer gets that fill and keeps its
+  ink, the selected row keeps the space's colour, Return and ↓↑ act on the selection, a click opens the row
+  clicked, and the ✕ (#779) shows on a hovered visited page's row in the arrow's unselected look. Hover still waits
+  for the pointer to move (#382). Scenario command-bar-hover.
 
 ## Key bindings (StorableKeyBindings.json + strings)
 - [O] Action = {identifier, name}; binding = {keyEquivalent, deviceIndependentModifierFlags}, priority, typeTravelTriggers;

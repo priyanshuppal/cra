@@ -4675,6 +4675,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     func debugCommandBarIcon(_ i: Int) -> String { commandHost?.debugRowIcon(i) ?? "none" }
     /// cra://debug?commandBarDelete (#779): the open bar's n-th row's ✕, in screen points; nil when it shows none.
     func debugCommandBarDeletePoint(_ i: Int) -> NSPoint? { commandPanel.isVisible ? commandHost?.debugDeletePoint(i) : nil }
+    /// cra://debug?commandBarRowPoint: the open bar's n-th row's centre, in screen points; nil when it isn't shown.
+    func debugCommandBarRowPoint(_ i: Int) -> NSPoint? { commandPanel.isVisible ? commandHost?.debugRowPoint(i) : nil }
     /// cra://debug?commandBarDeleteKey (#779): a key typed in the open bar's field, through the app as a key press goes
     /// (the menus' key equivalents first), only while the bar holds the keys.
     func debugCommandBarKey(characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {

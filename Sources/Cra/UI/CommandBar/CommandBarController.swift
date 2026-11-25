@@ -12,6 +12,9 @@ final class CommandBarController {
     var query = ""
     var result = SuggestionResult()
     var selectedIndex = 0
+    /// The row under the pointer, nil off the rows. As in Arc (`CommandBarSuggestionRowView.isHovered`), it gets
+    /// a faint fill of its own and leaves `selectedIndex`, the row Return and the arrows start from, alone.
+    var hoveredIndex: Int?
     /// Text pushed into the field from outside (prefill); bump version to apply.
     var fieldText = ""
     var fieldTextVersion = 0
@@ -370,16 +373,23 @@ final class CommandBarController {
         return true
     }
 
-    /// The pointer is over row `index`: it selects the row once the pointer has moved since the
-    /// rows last changed (CraCore HoverGate, #382).
+    /// The pointer is over row `index`: it is the hovered row once the pointer has moved since the
+    /// rows last changed (CraCore HoverGate, #382). The selection stays where it was, as in Arc.
     func hover(row index: Int) {
-        guard hoverGate.isHover(pointerAt: NSEvent.mouseLocation), selectedIndex != index else { return }
-        selectedIndex = index
+        guard hoverGate.isHover(pointerAt: NSEvent.mouseLocation), hoveredIndex != index else { return }
+        hoveredIndex = index
+    }
+
+    /// The pointer left row `index`. Only that row's hover goes: the next row's mouse-entered can come first.
+    func unhover(row index: Int) {
+        if hoveredIndex == index { hoveredIndex = nil }
     }
 
     /// What the engine listed, less the last row while the banner has its place.
     private func listed(_ r: SuggestionResult) -> SuggestionResult {
         hoverGate.listChanged(pointerAt: NSEvent.mouseLocation)
+        // The rows changed under the pointer: it hovers one again once it moves (#382).
+        if hoveredIndex != nil { hoveredIndex = nil }
         var r = r
         r.items = r.items.map(inWindow)
         let n = SearchSuggestionsNotice.rowsListed(r.items.count, maxRows: SuggestionEngine.maxRows, banner: showsNoticeBanner)
@@ -406,6 +416,7 @@ final class CommandBarController {
     func close() {
         guard isOpen else { return }
         isOpen = false
+        hoveredIndex = nil
         scope = nil
         searchEngineWatcher?.cancel()
         searchEngineWatcher = nil

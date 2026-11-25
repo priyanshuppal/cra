@@ -70,6 +70,8 @@
 #                               the pointer only moves there, as a hand rests it on the row (#743)
 #   click bar-delete <text>     a real click the same way on the ✕ of the open command bar's row whose address holds
 #                               <text>, after selecting that row (#779)
+#   click bar-row <text> [move] a real click the same way on the middle of the open command bar's row whose address
+#                               holds <text>, nothing selected first; with `move` the pointer only moves there (hover)
 #   bare-helper <suffix>        runs the engine's "Cra Helper (<suffix>)" with no arguments, as macOS launches the
 #                               Alerts helper for a notification click after it quit; fails unless it exits 0 in 10 s
 #   replace-app [chrome]        Cra.app replaced while Cra runs, as `brew upgrade --greedy` does: a scenario with this
@@ -596,10 +598,11 @@ while IFS= read -r raw || [ -n "$raw" ]; do
         sidebar-empty) ask="sidebarEmpty=point"; mark="sidebar empty point:" ;;
         row) ask="rowPoint=${3:-}"; mark="row point:" ;;
         bar-delete) ask="commandBarDelete=${3:-}"; mark="command bar delete point:" ;;
+        bar-row) ask="commandBarRowPoint=${3:-}"; mark="command bar row point:" ;;
         *) problem "click: unknown target ${2:-}"; continue ;;
       esac
       count=1; [ "${3:-}" = "double" ] && count=2
-      [ "${2:-}" = row ] && [ "${4:-}" = "move" ] && count=0
+      { [ "${2:-}" = row ] || [ "${2:-}" = bar-row ]; } && [ "${4:-}" = "move" ] && count=0
       [ -x "$OUT/click" ] || clang -fobjc-arc -framework AppKit "$ROOT/scripts/hid-click/click.m" -o "$OUT/click" 2>"$OUT/click-build.log"
       [ -x "$OUT/click" ] || { problem "the click helper did not build (click-build.log)"; continue; }
       seen=$(cat "$DATA"/cra*.log 2>/dev/null | grep -c "$mark")

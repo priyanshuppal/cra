@@ -18,6 +18,13 @@ public enum SuggestionDeletion {
         return url.isEmpty ? nil : url
     }
 
+    /// Whether a row shows the ✕: a deletable row the pointer is on, as in Arc, or the selected one, which ⌥⌘⌫
+    /// deletes. On the selected row it takes the arrow's selected look, on a hovered one the arrow's unselected
+    /// look (the reporter's Arc 1.172 capture).
+    public static func showsMark(deletable: Bool, fill: CommandBarRowFill) -> Bool {
+        deletable && fill != .none
+    }
+
     /// ⌥⌘⌫: Delete (key code 51) with ⌥ and ⌘ and neither ⇧ nor ⌃. ⌘⌫ and ⌥⌫ edit the text, ⇧⌘⌫ is Clear Browsing Data.
     public static func isShortcut(keyCode: UInt16, modifiers: UInt) -> Bool {
         keyCode == 51 && KeyChord.Modifiers(rawValue: modifiers).intersection([.shift, .control, .option, .command]) == [.option, .command]

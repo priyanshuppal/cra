@@ -1,0 +1,45 @@
+# Arc's hover in the ⌘T bar is its own faint fill (CommandBarSuggestionRowView.isHovered, hoveredColor) and leaves
+# the selection where the keyboard put it: the pointer resting on a row doesn't make it the one Return opens, ↓
+# moves on from the selected row and not from the hovered one, and a click still opens the row clicked. The
+# fixture's Chromium History has two "haystack" pages, so the bar lists rows under the typed one.
+requires screen
+env CRA_TEST_BACKGROUND=0
+budget rss=700 stalls50=10
+pace 0.5
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false, "searchSuggestions": false}
+profile ${FIXTURES}/HistoryProfile
+cra://open?url=${PAGE}?n=start
+expect-log loaded 127\.0\.0\.1
+wait 2
+cra://debug?mainFrame=100,100,1000,700
+wait 1
+cra://debug?activate=1
+wait 1
+# A real click on the page makes Cra the active app, so the bar's panel takes the keys and sits in front.
+click page-top
+wait 1
+cra://commandbar?query=haystack
+wait 2
+cra://debug?commandBarRows=before
+expect-log Cra command bar rows before: open=1 mode=\S+ selected=0 .*history:https?://haystack-ancient\.example\.com
+cra://debug?commandBarHover=before
+expect-log Cra command bar hover before: selected=0 hovered=-$
+# The real pointer rests on the ancient page's row: it's hovered, the typed row stays selected.
+click bar-row haystack-ancient move
+wait 1
+cra://debug?commandBarHover=rested
+expect-log Cra command bar hover rested: selected=0 hovered=https?://haystack-ancient\.example\.com
+cra://debug?commandBarRows=rested
+expect-log Cra command bar rows rested: open=1 mode=\S+ selected=0 [a-z]+:
+# ↓ moves from the selected row (0) to the next, not from the hovered one, which stays hovered.
+cra://debug?commandBarArrow=down
+wait 1
+cra://debug?commandBarHover=arrowed
+expect-log Cra command bar hover arrowed: selected=1 hovered=https?://haystack-ancient\.example\.com
+# A click opens the row clicked, not the selected one.
+click bar-row haystack-ancient
+wait 2
+cra://debug?commandBarRows=clicked
+expect-log Cra command bar rows clicked: open=0
+cra://debug?selectedTab=clicked
+expect-log selected tab clicked: https?://haystack-ancient\.example\.com
