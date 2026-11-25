@@ -251,6 +251,49 @@ struct ToolbarAutoHideTests {
         #expect(tracker.shown)
     }
 
+    /// Out of the window through its top edge with the bar out: the last sample is often in the band
+    /// above the window that the strip and the keep zone reach, which keeps the bar and asks for no
+    /// look, and the window sees no more moves. The bar stayed out until the pointer came back; it
+    /// now looks again while the pointer is there, and goes once the pointer reads as away.
+    @Test func aPointerThatLeftThroughTheTopIsLookedAtAgain() {
+        let above = CGPoint(x: 700, y: container.maxY + 2)
+        let next = { (due: TimeInterval?, pointer: ToolbarAutoHide.Pointer, point: CGPoint?, shown: Bool) in
+            ToolbarAutoHide.nextLook(due: due, pointer: pointer, at: point, container: self.container, shown: shown, now: 50)
+        }
+        // What the tracker asked for always stands.
+        #expect(next(51, .strip, above, true) == 51)
+        #expect(next(51, .away, CGPoint(x: 700, y: 400), false) == 51)
+        // Out, in the band above the window, nothing asked for: look again after the dwell.
+        #expect(next(nil, .strip, above, true) == 50 + ToolbarAutoHide.revealDwell)
+        #expect(next(nil, .bar, above, true) == 50 + ToolbarAutoHide.revealDwell)
+        // In the window, moves come: nothing more.
+        #expect(next(nil, .strip, CGPoint(x: 700, y: 716), true) == nil)
+        #expect(next(nil, .bar, CGPoint(x: 700, y: 690), true) == nil)
+        // Away (held: a popover, the focus) or not out, or no pointer: nothing, so a held bar never polls.
+        #expect(next(nil, .away, CGPoint(x: 700, y: 900), true) == nil)
+        #expect(next(nil, .elsewhere, above, true) == nil)
+        #expect(next(nil, .strip, above, false) == nil)
+        #expect(next(nil, .strip, nil, true) == nil)
+
+        // The whole way: the tracker alone asks for nothing in the band, the look sees the pointer
+        // further out, and the bar goes after the usual delay.
+        var tracker = ToolbarAutoHideTracker()
+        tracker.bringOut()
+        let band = ToolbarAutoHide.classify(above, card: card, container: container, barHeight: bar, shown: true)
+        #expect(band == .strip)
+        let due = tracker.sample(band, at: 100)
+        #expect(due == nil)
+        let look = ToolbarAutoHide.nextLook(due: due, pointer: band, at: above, container: container, shown: tracker.shown, now: 100)
+        #expect(look == 100 + ToolbarAutoHide.revealDwell)
+        let gone = CGPoint(x: 700, y: container.maxY + 40)
+        let away = ToolbarAutoHide.classify(gone, card: card, container: container, barHeight: bar, shown: true)
+        #expect(away == .away)
+        let hide = tracker.sample(away, at: 100 + ToolbarAutoHide.revealDwell)
+        #expect(hide == 100 + ToolbarAutoHide.revealDwell + ToolbarAutoHide.hideDelay)
+        #expect(tracker.tick(at: hide!) == nil)
+        #expect(!tracker.shown)
+    }
+
     // MARK: Keyboard focus
 
     /// Tab (with Full Keyboard Access) onto one of the hidden bar's buttons: the bar comes out at once,
