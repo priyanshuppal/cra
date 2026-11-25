@@ -5471,7 +5471,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
 
     private func focusAfterCommandBar() {
         // ⌘T from a Peek and Escape: the keys go back to the Peek still over its tab (#379).
-        if let peek = peeks.first(where: { !$0.isParked && $0.window?.isVisible == true }) {
+        if let peek = peeks.first(where: { !$0.isParked && !$0.closingPeek && $0.window?.isVisible == true }) {
             peek.window?.makeKeyAndOrderFront(nil)
             peek.focusPage()
             return
@@ -5484,7 +5484,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
     /// keys to the window, so they go back to the page, as Escape in the command bar gives them back. A Peek over
     /// its tab first (#379); an embedded page needs its view made first responder again, not only Chromium told.
     private func focusPageAfterAddressEdit() {
-        if let peek = peeks.first(where: { !$0.isParked && $0.window?.isVisible == true }) {
+        if let peek = peeks.first(where: { !$0.isParked && !$0.closingPeek && $0.window?.isVisible == true }) {
             peek.window?.makeKeyAndOrderFront(nil)
             peek.focusPage()
             return

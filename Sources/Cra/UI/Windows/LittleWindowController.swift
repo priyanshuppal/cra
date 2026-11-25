@@ -202,7 +202,12 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
     var dimFrame: NSRect? { dim?.frame }
     private var controls: PeekControlsPanel?
     /// The Peek is on its way out (closePeekAnimated), or gone (endPeek).
-    private(set) var closingPeek = false { didSet { if closingPeek != oldValue { peekParent?.syncPeekAddress() } } }
+    private(set) var closingPeek = false {
+        didSet {
+            (window as? LittleWindow)?.isClosing = closingPeek
+            if closingPeek != oldValue { peekParent?.syncPeekAddress() }
+        }
+    }
     /// The Peek is shrinking into place; a page window attaching now waits for the end.
     private var openingPeek = false
     /// The pictures moving while the Peek opens or closes.
@@ -1131,6 +1136,10 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
         guard let window, let parent = peekParent, let pw = parent.window else { finish(); return }
         let neverShown = openingPeek && transition == nil
         closingPeek = true
+        // The keys go back to the browser window now, not when the motion ends: Esc or ⌘W pressed during
+        // the close (0.16 s, after up to 80 ms for the screenshot) went to the vanishing Peek. Its
+        // windowDidBecomeKey focuses the tab's page.
+        if !promoted, NSApp.isActive { pw.makeKeyAndOrderFront(nil) }
         parent.closeCapture(in: self)
         transition?.remove()
         transition = nil
@@ -1161,6 +1170,7 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
             case .gone: "out to the area (the link is gone)"
             }
             CraLog.note("peek closes \(how)")
+            CraLog.note("peek close keys: \(pw.isKeyWindow ? "browser" : window.isKeyWindow ? "peek" : "elsewhere")")
             let t = PeekTransition(over: pw, card: card,
                                    cardImage: PeekTransition.picture(of: self.shell, page: page, pageRect: pageRect),
                                    column: self.controls.map { pw.convertFromScreen($0.frame) } ?? .zero,
@@ -2876,9 +2886,11 @@ final class LittleWindow: NSPanel {
     /// Arc's open animation: ~120 ms from a small rectangle to the full frame.
     override func animationResizeTime(_ newFrame: NSRect) -> TimeInterval { LittleMetrics.openDuration }
     /// A Peek is borderless (Arc's card has no title bar) but still takes the keyboard, unless it
-    /// waits on its tab out of sight (#242).
+    /// waits on its tab out of sight (#242) or is closing.
     var isParked = false
-    override var canBecomeKey: Bool { !isParked }
+    /// On its way out, the Peek gives the keys back to the browser window (closePeekAnimated).
+    var isClosing = false
+    override var canBecomeKey: Bool { !isParked && !isClosing }
     /// A panel never becomes main; a titled window did, and the browser window's active look
     /// and the page's hover state follow the main window.
     override var canBecomeMain: Bool { styleMask.contains(.titled) }
