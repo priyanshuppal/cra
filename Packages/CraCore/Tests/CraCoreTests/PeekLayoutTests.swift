@@ -55,6 +55,19 @@ struct PeekLayoutTests {
         #expect(PeekLayout.dismissArea(covering: window, contentMinX: 0).minX == 3)
     }
 
+    @Test func buttonsStayInsideANarrowWindow() {
+        // A 640 pt window (the minimum) with sidebars of 500, 260 and 170 pt, and Arc's area.
+        for width: CGFloat in [140, 380, 470, 1381] {
+            let area = CGRect(x: 0, y: 0, width: width, height: 400)
+            let card = PeekLayout.card(in: area)
+            #expect(PeekLayout.column(beside: card).maxX <= area.maxX - 8, "area \(width)")
+            #expect(abs(card.midX - area.midX) <= 0.5, "area \(width) centred")
+        }
+        // Wide enough, Arc's own card: 1105 of 1381 pt, 138 pt in.
+        let arc = PeekLayout.card(in: CGRect(x: 0, y: 0, width: 1381, height: 1084))
+        #expect(arc.minX == 138 && arc.width == 1105)
+    }
+
     @Test func hiddenSidebarCentresOnTheWindow() {
         let card = PeekLayout.card(in: PeekLayout.area(window: Self.window, contentMinX: 0))
         #expect(card.midX == Self.window.width / 2)
