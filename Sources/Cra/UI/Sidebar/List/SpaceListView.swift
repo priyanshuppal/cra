@@ -316,7 +316,6 @@ final class SpaceListView: NSView, NSDraggingSource {
         let incognito = store.isIncognito(space: spaceID)
         // What the models read, read here so a change still rebuilds the list: the models themselves are built
         // only for rows that get a view, outside this observation (#618).
-        _ = favicons.images
         _ = store.settings
         let peekBadges = ui.peekBadges
         _ = LiveFolderPluginStore.shared.entries
@@ -340,6 +339,14 @@ final class SpaceListView: NSView, NSDraggingSource {
             default: break
             }
             return d
+        }
+
+        // The icons a row's model shows, key by key: a page reporting its icon rebuilds only the lists that show it.
+        func watchIcons(_ item: SidebarItem, pinned: Bool) {
+            guard let tab = item.tab else { return }
+            favicons.observe(tab.iconKey)
+            if pinned { favicons.observe(tab.customIconKey ?? FaviconKey.key(for: tab.savedURL)) }
+            favicons.observe(peekBadges[item.id]?.iconKey)
         }
 
         func add(_ item: SidebarItem, depth: Int, pinned: Bool, parent: UUID, index: Int, peeked: Bool = false) {
@@ -379,12 +386,15 @@ final class SpaceListView: NSView, NSDraggingSource {
                 row.pinned = pinned
                 row.peeked = peeked
                 row.selected = item.id == openTab
+                watchIcons(item, pinned: pinned)
                 out.append(row)
             } else if item.isSplit {
                 row.kind = .split
                 row.pinned = pinned
                 // Its tabs are read here, so a change to one rebuilds the list.
-                row.selected = store.children(of: item.id).contains { $0.isTab && $0.id == openTab }
+                let panes = store.children(of: item.id)
+                row.selected = panes.contains { $0.isTab && $0.id == openTab }
+                for pane in panes { watchIcons(pane, pinned: false) }
                 out.append(row)
             }
         }

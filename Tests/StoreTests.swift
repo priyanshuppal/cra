@@ -93,6 +93,8 @@ enum StoreTests {
         mcpExcludesPrivateTabs()
         pinnedURL()
         tabFavicons()
+        storingSameIconAgainNotifiesNoOne()
+        newIconNotifiesOnlyItsKey()
         folderSymbols()
         moveTabToSpace()
         moveFolderToSpace()
@@ -2635,6 +2637,54 @@ enum StoreTests {
         store.updateTab(rds.id, url: "https://example.org/")
         expect(store.item(rds.id)?.tab?.faviconKey == "example.org", "another host shows that site's icon")
         expect(store.item(eks.id)?.tab?.faviconKey == eksIcon, "and the other tab never changes")
+    }
+
+    private final class Told: @unchecked Sendable { var on = false }
+
+    /// What reads `key`'s icon, told when it changes.
+    @MainActor
+    private static func watching(_ cache: FaviconCache, _ key: String) -> Told {
+        let told = Told()
+        withObservationTracking { _ = cache.image(forKey: key) } onChange: { told.on = true }
+        return told
+    }
+
+    private static func pageIcon(_ name: String) -> NSImage {
+        NSImage(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Pages/\(name)"))!
+    }
+
+    /// A page reports its icon on every load, and BrowserManager stores it under the site's key and the
+    /// tab's: the same icon again tells no one, so no sidebar list is rebuilt for it.
+    @MainActor
+    private static func storingSameIconAgainNotifiesNoOne() {
+        let cache = FaviconCache()
+        let key = FaviconKey.key(site: "same-icon.example", tabID: UUID())
+        let first = pageIcon("icon-orange.png")
+        cache.store(first, forKey: key)
+        let told = watching(cache, key)
+        cache.store(pageIcon("icon-orange.png"), forKey: key)
+        expect(!told.on, "the same icon stored again, as a new image, tells no one")
+        expect(cache.image(forKey: key) === first, "and the first image stays")
+        cache.store(pageIcon("icon-blue.png"), forKey: key)
+        expect(told.on, "a different icon under the key tells what showed it")
+    }
+
+    /// A new icon tells only what read its key (or the site's a tab's key falls back to), not every
+    /// list that shows some icon.
+    @MainActor
+    private static func newIconNotifiesOnlyItsKey() {
+        let cache = FaviconCache()
+        let mine = FaviconKey.key(site: "mine.example", tabID: UUID())
+        let other = "other.example"
+        cache.store(pageIcon("icon-orange.png"), forKey: other)
+        let toldMine = watching(cache, mine), toldOther = watching(cache, other)
+        let toldSite = Told()
+        withObservationTracking { cache.observe(FaviconKey.key(site: "site.example", tabID: UUID())) } onChange: { toldSite.on = true }
+        cache.store(pageIcon("icon-blue.png"), forKey: mine)
+        expect(toldMine.on, "a tab's new icon tells what showed that tab's icon")
+        expect(!toldOther.on && !toldSite.on, "and nothing that showed another key")
+        cache.store(pageIcon("icon-blue.png"), forKey: "site.example")
+        expect(toldSite.on, "a site's new icon tells a row whose tab has no icon of its own yet")
     }
 
     // promise: #54
