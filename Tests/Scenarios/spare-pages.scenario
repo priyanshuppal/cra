@@ -3,8 +3,11 @@
 # until then extensions don't see it: chrome.tabs.query and chrome.windows.getAll leave it out
 # (spare-pages.patch). The fixture's button opens a page naming what it saw.
 budget rss=900 stalls50=8
+# Spares are held back while macOS reports memory pressure (spare-pages-pressure): pin it to normal so
+# this scenario doesn't depend on how full the Mac is, and hand it back at the end.
 cra://debug?installExtension=${FIXTURES}/TabsQueryExtension
 relaunch
+cra://debug?memoryPressure=normal
 cra://open?url=${PAGE}?n=one
 wait 4
 cra://open?url=${PAGE}?n=two
@@ -18,3 +21,4 @@ reject-log back answer: selected=.*page\.html\?n=tabs-[0-9]+-blank-[1-9]
 cra://debug?removeExtension=${TABS_QUERY_EXTENSION_ID}
 wait 1
 reject-log fault:
+cra://debug?memoryPressure=system
