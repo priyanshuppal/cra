@@ -228,6 +228,29 @@ struct ToolbarAutoHideTests {
         #expect(out.shown)
     }
 
+    /// The browser window samples the pointer only as it moves and looks again only when a sample asks
+    /// (it used to look 20 times a second): once the bar is away and the pointer rests over the page,
+    /// or the bar is out and the pointer rests on it, no look is asked for, however long it rests.
+    @Test func noDeadlineWhenHiddenAndAway() {
+        var tracker = ToolbarAutoHideTracker()
+        #expect(tracker.sample(.away, at: 90) == nil)
+        #expect(tracker.tick(at: 900) == nil)
+        #expect(!tracker.shown)
+        // Out and let go: one look for the delay, and nothing after it has gone.
+        tracker.bringOut()
+        let look = tracker.sample(.away, at: 100)
+        #expect(look == 100 + ToolbarAutoHide.hideDelay)
+        #expect(tracker.tick(at: 100 + ToolbarAutoHide.hideDelay) == nil)
+        #expect(!tracker.shown)
+        #expect(tracker.sample(.away, at: 101) == nil)
+        #expect(tracker.tick(at: 1000) == nil)
+        // Resting on a bar that is out asks for nothing either.
+        tracker.bringOut()
+        #expect(tracker.sample(.bar, at: 1001) == nil)
+        #expect(tracker.tick(at: 2000) == nil)
+        #expect(tracker.shown)
+    }
+
     // MARK: Keyboard focus
 
     /// Tab (with Full Keyboard Access) onto one of the hidden bar's buttons: the bar comes out at once,
