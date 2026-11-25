@@ -2,15 +2,16 @@ import Foundation
 
 /// The order of AppDelegate.bootstrapIfNeeded's set-up around the first window. Everything in the
 /// pass that orders the windows in delays their first frame, which Core Animation commits only at
-/// the end of that pass; what neither that frame, an incoming link, nor the first click or key
-/// needs waits for the next turn of the main queue. AppDelegate runs each stage from this list, so
+/// the end of that pass; what neither that frame nor the first click or key needs waits for the
+/// next turn of the main queue, and a link that started Cra opens there too, once settings sync
+/// has started. AppDelegate runs each stage from this list, so
 /// the tests pin the order it really runs.
 public enum LaunchSteps {
     public enum Stage: Int, Comparable, Sendable {
         /// Before the browser windows are made: what decides which tabs they draw.
         case beforeWindows
-        /// In the pass that orders the windows in, before its frame commits: what a link that
-        /// started Cra, a page's request or the first click or key reaches.
+        /// In the pass that orders the windows in, before its frame commits: what a page's request
+        /// or the first click or key reaches.
         case beforeShow
         /// The next turn of the main queue, once the first frame is committed: services nothing
         /// on screen waits for.
@@ -37,14 +38,16 @@ public enum LaunchSteps {
         /// Downloads, app links, view-source, Chrome's page windows, and the stray-page,
         /// chrome.tabs.create and relaunch handlers; extensions-welcomed.json is read here.
         case pageHandlers
-        /// Links that started Cra (application(_:open:) before bootstrap).
-        case pendingURLs
         /// Handoff to the iPhone (#745).
         case handoff
         /// The MCP server's socket.
         case mcpServer
         /// Settings sync's folder or iCloud.
         case settingsSync
+        /// Links that started Cra (application(_:open:) before bootstrap, or before this step). After
+        /// settings sync starts: a folder's first poll can replace the whole sidebar with the synced
+        /// one, which would take away a link's tab made before it.
+        case pendingURLs
         /// Usage stats and crash reports (their first send is 30 s later anyway).
         case sharing
         /// SidebarIntegrity's walk of the whole tree, which logs a fault per broken link.
@@ -59,8 +62,8 @@ public enum LaunchSteps {
         public var stage: Stage {
             switch self {
             case .urlEvents, .menus, .autoArchive: .beforeWindows
-            case .keyMonitors, .commandFile, .systemWake, .activate, .pageHandlers, .pendingURLs: .beforeShow
-            case .handoff, .mcpServer, .settingsSync, .sharing, .sidebarCheck, .liveFolders, .historyProfiles,
+            case .keyMonitors, .commandFile, .systemWake, .activate, .pageHandlers: .beforeShow
+            case .handoff, .mcpServer, .settingsSync, .pendingURLs, .sharing, .sidebarCheck, .liveFolders, .historyProfiles,
                  .pageHistoryPrune: .afterFirstFrame
             }
         }

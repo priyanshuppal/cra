@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// The front window's page offered to the user's iPhone through Handoff (#745).
     private lazy var handoff = HandoffPublisher { [weak self] in self?.handoffPage() }
     private var pendingURLs: [String] = []
+    /// Set by LaunchSteps.Step.pendingURLs: until then, links that come in wait in pendingURLs, so they
+    /// open in order and after settings sync has started.
+    private var launchLinksOpened = false
     private var settingsWindow: NSWindow?
     private var settingsController: SettingsWindowController?
     private var isRelaunching = false
@@ -187,6 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
         case .pageHandlers: installPageHandlers()
         case .pendingURLs:
+            // After settings sync's start: a folder's first poll can replace the sidebar (LaunchStepsTests).
+            launchLinksOpened = true
             let urls = pendingURLs
             pendingURLs = []
             for u in urls { openExternalURL(u) }
@@ -583,12 +588,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue else { return }
-        if bootstrapped { openExternalURL(s) } else { pendingURLs.append(s) }
+        if launchLinksOpened { openExternalURL(s) } else { pendingURLs.append(s) }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for u in urls {
-            if bootstrapped { openExternalURL(u.absoluteString) } else { pendingURLs.append(u.absoluteString) }
+            if launchLinksOpened { openExternalURL(u.absoluteString) } else { pendingURLs.append(u.absoluteString) }
         }
     }
 
