@@ -1145,7 +1145,10 @@ final class ShellView: NSView {
     /// the pointer once, `at:x,y` says what a pointer there would be to the bar, `move:x,y` puts a
     /// stand-in pointer there and samples it as a move over the shell does (the real pointer of a
     /// scenario's copy can be anywhere), `timers[:label]` says whether a look is waiting and how many the
-    /// timer took since the last `timers`; anything else is a label. Every one answers with the
+    /// timer took since the last `timers`, `place:x,y` puts the stand-in pointer there without a sample
+    /// (it moved while nothing was watching: a menu pulled from the bar tracks the pointer itself, so the
+    /// shell sees no moves until the menu ends), and `menuEnd` says a menu's tracking ended as AppKit
+    /// does (`NSMenu.didEndTrackingNotification`); anything else is a label. Every one answers with the
     /// command and where the bar is.
     /// toolbarColor=<label>: the colour behind the first pane's bar as RRGGBB ("#" starts a comment in a
     /// scenario), "white" when it has none (#629).
@@ -1174,6 +1177,7 @@ final class ShellView: NSView {
                 window?.makeFirstResponder(button)
             }
         case "blur": window?.makeFirstResponder(nil)
+        case "menuEnd": NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: NSMenu())
         default: break
         }
         layoutSubtreeIfNeeded()
@@ -1184,6 +1188,13 @@ final class ShellView: NSView {
             let p = convert(NSPoint(x: g[0], y: window.frame.height - g[1]), from: nil)
             toolbarPointer = { p }
             if floatingCard != nil { sampleToolbarPointer() }
+            return "toolbar \(command): out=\(toolbarTracker.shown ? 1 : 0) look=\(toolbarLook != nil ? 1 : 0)"
+        }
+        if command.hasPrefix("place:"), let window {
+            let g = command.dropFirst(6).split(separator: ",").compactMap { Double($0) }
+            guard g.count == 2 else { return "toolbar place: x,y" }
+            let p = convert(NSPoint(x: g[0], y: window.frame.height - g[1]), from: nil)
+            toolbarPointer = { p }
             return "toolbar \(command): out=\(toolbarTracker.shown ? 1 : 0) look=\(toolbarLook != nil ? 1 : 0)"
         }
         if command.hasPrefix("timers") {
