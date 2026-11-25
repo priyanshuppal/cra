@@ -8,6 +8,16 @@ import Foundation
 /// 1x, full screen on a 1920 × 1080 display (10 Nov 2026, issue #315): sidebar shown, card at
 /// x 228–1910, y 10–1070; View ▸ Hide Sidebar, card at 0–1920 × 0–1080, square.
 public enum CardFill {
+    /// How a corner turns: a circular arc, or Apple's continuous curve (`CALayerCornerCurve`).
+    public enum Curve: Sendable { case circular, continuous }
+
+    /// The page card's corner curve. Arc's card corner fits a circular 12 px radius at 2x (Arc 1.170.0,
+    /// 24 Oct 2026, docs/arc-reverse-engineering.md), and the card's shadow cuts its card out along a
+    /// circular rounded rect. Every layer that draws the card's edge (the card, its page fill, the page
+    /// window's mask, the focus ring, the drop region) takes this curve, so the edge meets the shadow's
+    /// cut-out with no sliver of neither where a continuous curve ran inside the circular one.
+    public static let cornerCurve: Curve = .circular
+
     /// - Parameters:
     ///   - edgeToEdge: Settings ▸ "Pages fill the window edge to edge" (#24), which fills it always.
     ///   - fullScreen: the window is in macOS full screen (not a page's element full screen).

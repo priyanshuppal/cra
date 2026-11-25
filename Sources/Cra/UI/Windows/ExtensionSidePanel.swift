@@ -26,7 +26,7 @@ final class ExtensionSidePanelCard: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = cornerRadius
-        layer?.cornerCurve = .continuous
+        layer?.cornerCurve = .card
         layer?.masksToBounds = true
         pageArea.wantsLayer = true
         pageArea.autoresizesSubviews = false
@@ -249,7 +249,7 @@ final class ExtensionSidePanelController: NSObject, @preconcurrency CraBrowserDe
         if let cv = host.contentView {
             cv.wantsLayer = true
             cv.layer?.cornerRadius = shell.sidePanel.cornerRadius
-            cv.layer?.cornerCurve = .continuous
+            cv.layer?.cornerCurve = .card
             cv.layer?.maskedCorners = cv.isFlipped ? [.layerMinXMaxYCorner, .layerMaxXMaxYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner]
             cv.layer?.masksToBounds = true
         }

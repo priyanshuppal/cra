@@ -661,7 +661,8 @@ Measured with `screencapture -l<id>` of Arc's main window against Cra's shell wi
 same 1728×1084 frame, probing pixel runs at 2x:
 - Content card: 10 pt inset (card top at y=20 px), corner fits a circular 12 px radius
   → `contentCornerRadius` 6 pt (was 10). The card starts at the sidebar's right edge with
-  no gap; Victor's Arc sidebar was 284 pt wide in this capture.
+  no gap; Victor's Arc sidebar was 284 pt wide in this capture. Cra rounds the card circular too
+  (`CardFill.cornerCurve`), the curve its shadow is cut along; it was continuous until 26 Nov 2026.
 - Toolbar strip (default mode, Messenger, theme-color white): 32 pt tall (y 20–83 px),
   1 px hairline #F2F2F2 under it at 42 pt from the window top. The earlier "40/42 pt" figure
   included the card inset. Nav glyph centres 21 / 58 / 94 pt from the card's left edge.

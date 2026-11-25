@@ -62,4 +62,11 @@ struct CardFillTests {
         #expect(!(try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))).edgeToEdgeRoundedCorners)
         #expect(UsageStats.unreportedSettings.contains("edgeToEdgeRoundedCorners"))
     }
+
+    /// Arc's card corner is circular (it fits a circular 12 px radius at 2x, Arc 1.170.0), and the card's
+    /// shadow cuts the card out along a circular path: a continuous card edge ran up to a quarter pixel
+    /// inside that cut near each corner, a sliver with neither card nor shadow.
+    @Test func theCardCornerIsCircularLikeArcs() {
+        #expect(CardFill.cornerCurve == .circular)
+    }
 }

@@ -190,6 +190,9 @@ to Markdown or `docs/` alone runs nothing.
 - `scripts/test-emoji-label.sh`: a space's emoji label in the dock and the space header, drawn
   clipped to its frame and with the cell's text cut at the baseline, as macOS 27 draws it: `EmojiLabel`
   shows the emoji's whole picture, in the same place (#399).
+- `scripts/test-card-corners.sh`: a card layer rounded with `CALayerCornerCurve.card`, read back through the
+  window server, against `CardShadowView`'s cut-out at the same scale: the card covers the cut at 6, 10 and
+  13 pt, so no sliver with neither card nor shadow shows at its corners.
 - `scripts/test-pip-corners.sh`: the Picture in Picture hover controls in a transparent window like the
   overlay, read back through the window server: shown, the dark layer stays inside the window's 6 pt
   corners at every size class (#463).
