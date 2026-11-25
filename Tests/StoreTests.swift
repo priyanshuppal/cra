@@ -90,6 +90,7 @@ enum StoreTests {
         incognitoStaysOffDisk()
         sidebarDocumentBuiltOncePerSave()
         debouncedSidebarSaveWritesTheLatestState()
+        restoredTabReachesSidebarBeforeLeavingArchive()
         chromePagesLeaveIncognito()
         incognitoKeepsItsSpacesProfile()
         mcpExcludesPrivateTabs()
@@ -2343,6 +2344,41 @@ enum StoreTests {
                "what is written is the store as the debounce ends, not as the first report left it")
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         expect(store.documentBuilds == before + 1, "and nothing builds it again")
+    }
+
+    /// A tab restored from the archive is on disk in sidebar.json by the time archive.json drops
+    /// it. sidebar.json's document is built on the main queue when its debounce ends (#214), and
+    /// the restored page's title pushes that 2 s back; archive.json had its own 0.4 s timer on the
+    /// persistence queue, so it landed first and a crash in between lost the tab from both files.
+    /// Both are written on one serial queue, so archive.json read first and without the entry
+    /// means sidebar.json, written before it, must already have the tab.
+    @MainActor
+    private static func restoredTabReachesSidebarBeforeLeavingArchive() {
+        let store = AppComposition(clock: ManualScheduler()).store
+        let tab = store.createTab(url: "https://example.com/restored")
+        store.archiveTab(tab.id, reason: .manual)
+        store.saveAll()
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        func inArchive() -> Bool {
+            let saved = try? d.decode([ArchivedItem].self, from: Data(contentsOf: AppPaths.file("archive.json")))
+            return saved?.contains { $0.id == tab.id } == true
+        }
+        func inSidebar() -> Bool {
+            let doc = try? d.decode(SidebarDocument.self, from: Data(contentsOf: AppPaths.file("sidebar.json")))
+            return doc?.items.contains { $0.id == tab.id } == true
+        }
+        expect(inArchive() && !inSidebar(), "the archived tab is on disk in archive.json only")
+        store.restoreArchived(tab.id, select: false)
+        // The restored page reports its title, as a page made for it does.
+        store.updateTab(tab.id, url: "https://example.com/restored/page", title: "Restored")
+        let deadline = Date().addingTimeInterval(6)
+        while inArchive() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        // In this order: archive.json first, then sidebar.json.
+        let dropped = !inArchive()
+        let restored = inSidebar()
+        expect(dropped, "archive.json drops the restored tab")
+        expect(restored, "and sidebar.json already has it when archive.json no longer does")
     }
 
     /// A document as sidebar.json holds it: items in a fixed order (they come out of a dictionary)

@@ -93,12 +93,16 @@ final class JSONStore<T: Codable> {
     /// above. For a file saved on every change: a loading page reports its title and address
     /// dozens of times, and building sidebar.json's document each time cost 1–3 ms on a
     /// 2,600-item sidebar (#214). `make` returning nil (its owner is gone) writes nothing.
-    func save(delay: TimeInterval = 0.4, make: @escaping @MainActor () -> T?) {
+    /// `then` runs on the main thread right after the write is queued, so a save it queues on
+    /// another JSONStore is written after this one.
+    func save(delay: TimeInterval = 0.4, make: @escaping @MainActor () -> T?,
+              then: (@MainActor () -> Void)? = nil) {
         pending?.cancel()
         let item = DispatchWorkItem {
             MainActor.assumeIsolated {
                 guard let value = make() else { return }
                 persistenceQueue.async { self.write(value) }
+                then?()
             }
         }
         pending = item

@@ -247,14 +247,21 @@ final class SidebarStore {
 
     /// Saves the sidebar `delay` after the last change, building its document only then (#214):
     /// every select and every title or address a loading page reports lands here.
+    ///
+    /// A changed archive is queued right behind that document, never on a timer of its own: a tab
+    /// restored from the archive is in neither file if archive.json lands without it while
+    /// sidebar.json, built only once the main thread is free or pushed back 2 s by the page's
+    /// title, doesn't have it yet. Written together, the gap is the time one write takes, as
+    /// before #214.
     private func saveSoon(delay: TimeInterval = 0.4) {
-        sidebarFile.save(delay: delay) { [weak self] in self?.documentToSave() }
+        sidebarFile.save(delay: delay, make: { [weak self] in self?.documentToSave() },
+                         then: { [weak self] in self?.saveArchiveIfChanged(delay: 0) })
     }
 
-    private func saveArchiveIfChanged() {
+    private func saveArchiveIfChanged(delay: TimeInterval = 0.4) {
         if archiveChanged {
             archiveChanged = false
-            archiveFile.save(archive)
+            archiveFile.save(archive, delay: delay)
         }
     }
 
@@ -278,7 +285,6 @@ final class SidebarStore {
         pruneEmptyGroups()
         revision &+= 1
         saveSoon()
-        saveArchiveIfChanged()
         changedHere()
     }
 
