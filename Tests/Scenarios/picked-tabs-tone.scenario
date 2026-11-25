@@ -1,0 +1,16 @@
+# Tabs picked with ⌘/⇧-click take Arc's multi-select tint (TabCellBackgroundMutiselected: black 0.10 on a light
+# sidebar, white 0.10 on a dark one) and no shadow, while the open tab among them keeps the open tab's fill
+# (TabCellBackgroundCurrent). Cra drew every pick as the open tab. Today lists the newest tab first, so the
+# open tab is the first row and the two picks are the first two.
+budget rss=700 stalls50=10
+cra://open?url=${PAGE}?n=one
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+cra://open?url=${PAGE}?n=two
+cra://open?url=${PAGE}?n=three
+wait 2
+cra://debug?tabRows=open
+expect-log tab rows open: fill=selected lifted=[01]\|fill=clear lifted=0\|fill=clear lifted=0$
+cra://debug?pickedMenu=2&label=pick
+wait 1
+cra://debug?tabRows=picked
+expect-log tab rows picked: fill=selected lifted=[01]\|fill=picked lifted=0\|fill=clear lifted=0$

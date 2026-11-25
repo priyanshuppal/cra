@@ -896,6 +896,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         CraLog.note("picked menu \(label) ran \(run): \(copied) picks=\(sidebarUI.multiSelection.count)")
     }
 
+    /// `cra://debug?tabRows=<label>`: how the focused space's tab rows are filled, in listed order, "|"
+    /// between rows (TabRowView.debugLook). Picked tabs take Arc's multi-select tint, the open one its own.
+    func testTabRows(label: String) {
+        func rows(in v: NSView) -> [TabRowView] {
+            (v as? TabRowView).map { [$0] } ?? v.subviews.flatMap { rows(in: $0) }
+        }
+        let all = window?.contentView.map(rows(in:)) ?? []
+        let looks = store.listedTabIDs(in: focusedSpaceID).compactMap { id in all.first { $0.model?.id == id }?.debugLook }
+        CraLog.note("tab rows \(label): \(looks.isEmpty ? "none" : looks.joined(separator: "|"))")
+    }
+
     /// For test hooks: a menu's rows, "|" between rows, "──" for a separator, "▸" after a submenu,
     /// " (off)" after a dimmed row, " ⌥" after a row ⌥ shows in place of the one before it.
     static func menuReadout(_ menu: NSMenu) -> String {

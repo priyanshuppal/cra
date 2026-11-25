@@ -3296,6 +3296,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 main.testPickedMenu(count: n, label: dict["label"] ?? "\(n)", run: dict["run"])
                 return
             }
+            // tabRows=<label>: "tab rows <label>: fill=… lifted=…|…", the focused space's tab rows as drawn, see
+            // testTabRows.
+            if let label = dict["tabRows"] {
+                main.testTabRows(label: label)
+                return
+            }
             // incognitoWindow=<url>: a page's Open Link in Incognito Window, a new incognito window
             // showing that page, without the command bar's keys (#412).
             if let url = dict["incognitoWindow"] {

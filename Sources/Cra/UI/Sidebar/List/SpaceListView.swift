@@ -438,7 +438,7 @@ final class SpaceListView: NSView, NSDraggingSource {
                     renameText: item.title ?? title, subtitle: subtitle,
                     icon: img, flipIcon: flip, liveIcon: liveIcon,
                     editing: renaming == item.id, selected: selected,
-                    highlighted: picks.isEmpty ? selected && !placeholder : picks.contains(item.id),
+                    highlight: TabRowHighlight(current: selected && !placeholder, picked: picks.contains(item.id), picking: !picks.isEmpty),
                     capturing: capturing.contains(item.id), shared: shared.contains(item.id),
                     canShareInstead: shareInstead.contains(item.id), agent: agents.contains(item.id), audible: audible.contains(item.id), muted: tab.muted, unread: item.isUnread,
                     navigatedAway: navigatedAway,
