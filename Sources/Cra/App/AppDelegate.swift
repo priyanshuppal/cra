@@ -1280,6 +1280,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 CraLog.note("chrome pref \(name): " + (CraCEFRuntime.preference(name, forProfile: nil) ?? "none"))
                 return
             }
+            // reduceMotion=1|0|system: Reduce motion as Cra's motions read it (ReducedMotion), without System Settings.
+            if let v = dict["reduceMotion"] {
+                ReducedMotion.debugOverride = v == "1" ? true : v == "0" ? false : nil
+                CraLog.note("reduce motion: \(ReducedMotion.isOn ? "on" : "off")\(ReducedMotion.debugOverride == nil ? " (system)" : "")")
+                return
+            }
             if let v = dict["httpsOnly"] {
                 store.settings.httpsOnly = v == "1"
                 CraLog.note("https only: \(store.settings.httpsOnly ? "on" : "off")")

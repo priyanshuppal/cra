@@ -1561,7 +1561,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         sidebarUI.recentDownload = RecentDownload(id: download.identifier, path: download.fullPath,
                                                   image: NSWorkspace.shared.icon(for: type))
         var flight: TimeInterval = 0
-        if let window, window.isVisible, let anchor = sidebarUI.libraryAnchor, let host = anchor.window,
+        // Reduce motion drops the flight; the file still lands in the bin (ReducedMotion: a decorative flight).
+        if ReducedMotion.now(.flight).plays, let window, window.isVisible, let anchor = sidebarUI.libraryAnchor, let host = anchor.window,
            host.isVisible, !anchor.isHiddenOrHasHiddenAncestor {
             // Aim at the bin's centre (screen coordinates are y-up, the offset is SwiftUI's y-down).
             let glyph = host.convertToScreen(anchor.convert(anchor.bounds, to: nil))

@@ -147,6 +147,7 @@ final class NewSpacePlusView: NSView {
 
     /// The disc grows a little and comes back as it turns over.
     private func pop() {
+        guard ReducedMotion.now(.bounce).plays else { return }
         let a = CAKeyframeAnimation(keyPath: "transform.scale")
         a.values = [1, NewSpaceSwipe.pop, 1]
         a.keyTimes = [0, 0.5, 1]

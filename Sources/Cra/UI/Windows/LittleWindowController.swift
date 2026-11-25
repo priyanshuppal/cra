@@ -2660,7 +2660,10 @@ final class LittleShellView: NSView {
     func setBarRevealed(_ revealed: Bool, animated: Bool) {
         guard floatsBar, barRevealed != revealed else { return }
         barRevealed = revealed
-        guard animated, window != nil else { syncBarVisibility(); needsLayout = true; layoutSubtreeIfNeeded(); return }
+        // Reduce motion: the bar dissolves in or out in its place instead of sliding.
+        let motion: ReducedMotion.Substitute = animated ? ReducedMotion.now(.slide) : .instant
+        if case .crossfade(let d) = motion, window != nil { dissolveNextChange(d) }
+        guard motion.plays, window != nil else { syncBarVisibility(); needsLayout = true; layoutSubtreeIfNeeded(); return }
         if revealed { toolbarHost.isHidden = false }
         let target = barFrame(in: layoutBounds)
         NSAnimationContext.runAnimationGroup({ ctx in

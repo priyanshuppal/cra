@@ -83,6 +83,11 @@ built release app with a test profile. Note anything that fails in the release's
 
 ### Sidebar, tabs and the command bar
 
+- **Reduce motion:** With System Settings ▸ Accessibility ▸ Display ▸ Reduce motion on: ⌘S dissolves the sidebar in and out in
+  place, the floating sidebar fades in where it lands and out where it was, a space swipe follows the fingers and then dissolves
+  into the space (no glide), Peek and the + menu fade without zooming, a toast fades in without springing, a download lands in the
+  bin with no glyph flying, and Tab into a command bar scope neither bounces nor splashes. Nothing flashes or is left half drawn.
+  Off again, every one moves as in Arc. (`reduce-motion` checks ⌘S's readout; this is how the dissolves look.)
 - **#483:** with no selected tab and the sidebar saved hidden, it comes straight out floating and
   stays visible when the pointer leaves and when another app comes to the front. Its button switches
   between docked and floating. Open a page: it remains while the pointer is over it, then slides away

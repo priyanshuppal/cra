@@ -389,14 +389,16 @@ final class CommandBarView: NSView {
 
     /// Tab into a scope and Backspace out of it: the bar bounces, and a site's colour washes
     /// through it (Arc's arc_commandBarBounce and SplashView, read from its binary).
+    /// Reduce motion drops both: they are decoration, and the scope's pill already says what changed.
     private func scopeChanged(color: NSColor?) {
-        bounce()
+        let plays = ReducedMotion.now(.bounce).plays
+        if plays { bounce() }
         splash?.parent?.removeChildWindow(splash!)
         splash?.orderOut(nil)
         splash = nil
         innerSplash?.removeFromSuperview()
         innerSplash = nil
-        if let color { showSplash(color) }
+        if plays, let color { showSplash(color) }
     }
 
     /// A spring toward 0.95 (damping ratio 0.9, response 0.7) cut off after 0.1 s and played

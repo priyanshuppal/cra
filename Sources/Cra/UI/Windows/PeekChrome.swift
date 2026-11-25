@@ -643,6 +643,8 @@ final class PeekTransition {
     static func scaleBackdrop(_ view: NSView, around center: CGPoint, to scale: CGFloat,
                               duration: TimeInterval, timing: CAMediaTimingFunction?) {
         guard let layer = view.layer else { return }
+        // Reduce motion: the page steps back at once; nothing on it changes, so there is nothing to dissolve.
+        let duration = ReducedMotion.now(.zoom, contentChanges: false).duration(duration)
         let anchor = CGPoint(x: layer.bounds.minX + layer.bounds.width * layer.anchorPoint.x,
                              y: layer.bounds.minY + layer.bounds.height * layer.anchorPoint.y)
         let transform = CATransform3DMakeAffineTransform(PeekLayout.backdropTransform(scale: scale, around: center, anchor: anchor))
@@ -665,18 +667,41 @@ final class PeekTransition {
 
     /// Out of the link (or the area) to the card's frame; `done` once it has landed.
     func open(done: @escaping () -> Void) {
+        if case .crossfade(let fade) = ReducedMotion.now(.zoom) { return dissolve(shown: true, duration: fade, done: done) }
         let d = PeekLayout.openDuration
         run(Self.samples(d) { PeekLayout.opening(from: self.source, to: self.cardFrame, at: $0) }, duration: d, keepEnd: false, done: done)
     }
 
     /// Back into the link (or out to the area, fading); `done` once it is gone.
     func close(done: @escaping () -> Void) {
+        if case .crossfade(let fade) = ReducedMotion.now(.zoom) { return dissolve(shown: false, duration: fade, done: done) }
         let target = source
         let scale = hasLinkPicture ? PeekLayout.closeScaleDuration : PeekLayout.closeToAreaDuration
         let d = PeekLayout.closeDuration(scale: scale)
         // The panel goes at the end, and the real link is under the picture.
         run(Self.samples(d) { PeekLayout.closing(from: self.cardFrame, to: target, at: $0, duration: scale) },
             duration: d, keepEnd: true, done: done)
+    }
+
+    /// Reduce motion's open and close: the card fades in or out at its own frame instead of zooming from the link.
+    private func dissolve(shown: Bool, duration: Double, done: @escaping () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { done() } }
+        place(PeekLayout.Moment(frame: cardFrame, sourceOpacity: 0, buttonsOpacity: 1))
+        link.opacity = 0
+        for layer in [group, buttons] {
+            layer.removeAllAnimations()
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = shown ? 0 : 1
+            fade.toValue = shown ? 1 : 0
+            fade.beginTime = CACurrentMediaTime() + Self.lead
+            fade.duration = duration
+            fade.fillMode = .backwards
+            layer.add(fade, forKey: "opacity")
+            layer.opacity = shown ? 1 : 0
+        }
+        CATransaction.commit()
     }
 
     func remove() {

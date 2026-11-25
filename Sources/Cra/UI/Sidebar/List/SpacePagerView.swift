@@ -174,6 +174,14 @@ final class SpacePagerView: NSView {
 
     /// Dia settles pages with a zero-bounce spring that picks up the release speed.
     private func settle(index: Int, from x: CGFloat) {
+        // Reduce motion: the fingers were followed 1:1; after the release the space dissolves in instead of gliding.
+        if window != nil, case .crossfade(let d) = ReducedMotion.now(.slide) {
+            pendingVelocity = 0
+            stopSpring()
+            dissolveNextChange(d)
+            finishSpring()
+            return
+        }
         // CASpringAnimation's initialVelocity: the distance to travel per second.
         spring = Spring(index: index, clock: SettleClock(started: CACurrentMediaTime()), x0: x, v0: -CGFloat(pendingVelocity) * x)
         pendingVelocity = 0

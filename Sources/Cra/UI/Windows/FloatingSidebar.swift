@@ -524,8 +524,21 @@ final class FloatingSidebarController {
         slider.frame = slideFrame(shown: shown)
         CATransaction.commit()
         placeShadow()
-        let animation: CABasicAnimation
-        if shown {
+        let animation: CAAnimation
+        if case .crossfade(let fade) = ReducedMotion.now(shown ? .spring : .slide) {
+            // Reduce motion: no travel. Coming out it fades in where it lands; going away it fades out where it was.
+            let hold = CABasicAnimation(keyPath: "position.x")
+            hold.isAdditive = true
+            hold.fromValue = shown ? 0 : from - layer.position.x
+            hold.toValue = hold.fromValue
+            let opacity = CABasicAnimation(keyPath: "opacity")
+            opacity.fromValue = shown ? 0 : 1
+            opacity.toValue = shown ? 1 : 0
+            let group = CAAnimationGroup()
+            group.animations = [hold, opacity]
+            group.duration = fade
+            animation = group
+        } else if shown {
             // Arc's reveal (CraCore's FloatingSidebarSpring): lands in ~0.115 s, swings ~4 pt past, settles by ~0.25 s.
             let arc = FloatingSidebarSpring.reveal(travel: Double(shell.sidebarWidth + FloatingSidebarGeometry.margin))
             let spring = CASpringAnimation()
@@ -538,17 +551,21 @@ final class FloatingSidebarController {
                 spring.beginTime = CACurrentMediaTime() + Metrics.firstFrameDelay
                 spring.fillMode = .backwards
             }
+            spring.keyPath = "position.x"
+            spring.isAdditive = true
+            spring.fromValue = from - layer.position.x
+            spring.toValue = 0
             animation = spring
         } else {
-            animation = CABasicAnimation()
-            animation.duration = Metrics.hideDuration
+            let hide = CABasicAnimation(keyPath: "position.x")
+            hide.duration = Metrics.hideDuration
             let c = Metrics.hideCurve
-            animation.timingFunction = CAMediaTimingFunction(controlPoints: c.0, c.1, c.2, c.3)
+            hide.timingFunction = CAMediaTimingFunction(controlPoints: c.0, c.1, c.2, c.3)
+            hide.isAdditive = true
+            hide.fromValue = from - layer.position.x
+            hide.toValue = 0
+            animation = hide
         }
-        animation.keyPath = "position.x"
-        animation.isAdditive = true
-        animation.fromValue = from - layer.position.x
-        animation.toValue = 0
         CATransaction.begin()
         CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
         for l in [layer, shadowView.layer].compactMap({ $0 }) {

@@ -1324,6 +1324,18 @@ final class FavoritePeekBadge: NSView {
         let (from, to) = entering ? (small, CATransform3DIdentity) : (layer.presentation()?.transform ?? CATransform3DIdentity, small)
         let fromOpacity = entering ? 0 : layer.presentation()?.opacity ?? 1
         let toOpacity: Float = entering ? 1 : 0
+        if case .crossfade(let d) = ReducedMotion.now(.zoom) {
+            // Reduce motion: the badge fades in or out at its size instead of growing from a dot.
+            layer.removeAnimation(forKey: "peek_badge_transform")
+            layer.transform = CATransform3DIdentity
+            layer.opacity = toOpacity
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = fromOpacity
+            fade.toValue = toOpacity
+            fade.duration = d
+            layer.add(fade, forKey: "peek_badge_opacity")
+            return
+        }
         layer.transform = to
         layer.opacity = toOpacity
         for (key, a, b) in [("transform", NSValue(caTransform3D: from), NSValue(caTransform3D: to)),
