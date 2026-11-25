@@ -7,6 +7,7 @@ TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cra-back-forward-menu-tests.XXXXXX")"
 trap 'rm -rf "$TEST_DIR"' EXIT
 xcrun swiftc -swift-version 5 -parse-as-library ${CRA_TEST_SWIFTC_FLAGS:-} \
   Packages/CraCore/Sources/CraCore/BackForwardMenu.swift \
+  Packages/CraCore/Sources/CraCore/FaviconPlaceholder.swift \
   Sources/Cra/UI/Sidebar/SidebarCreationMenu.swift \
   Sources/Cra/UI/BackForwardMenuView.swift \
   Sources/Cra/UI/ButtonHold.swift \
