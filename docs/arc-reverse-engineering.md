@@ -5503,3 +5503,64 @@ ignore a press with no hover before it), read off full-screen 2x captures with t
 - **Cra:** `CloseSuccessor.pinnedClose(isFavorite:fromItsMenu:)`. The menu's Close Tab unloads the Favorite back to its
   pinned page, whether it is shown or loaded behind another tab; ⌘W and every other close still only deselect it.
 - **Open questions:** Arc's Favorite split menu, and whether ⇧⌘T brings a Favorite closed this way back.
+
+## Springs of Arc's controls (Arc 1.174.3, 26 Nov 2026, static: Swift metadata and disassembly)
+
+Follows "Arc's spring presets" above: which control each inline spring belongs to. Same arm64 slice and addresses.
+Owners come from Swift type descriptors (fields and nesting, read from `__swift5_types`), the strings and
+`State` offsets a function touches, and who calls it; there are no symbols. Confidence is per mapping.
+
+- **Toast, high, adopted.** 0x10190248c is a one-time initialiser: `.spring(response: 0.4, dampingFraction: 0.7,
+  blendDuration: 0.1)` (the call at 0x1019024c0) stored in the global 0x10472ba00. Only two functions read it, 0x1018ff4a8
+  and 0x1018ff5b4, both through `swift_once` and straight into `withAnimation`. Both call 0x101901c6c, the metadata accessor of
+  descriptor 0x103daece0, `Toasts.ToastWindow.ToastAnimator` (fields `_viewModel, _scrollObserver, internalToastView,
+  duration, dismissCallback, _animationState, shinyToastHoverState`). Their closures (0x101901ff0, 0x101902160) call the
+  `_animationState` setter 0x1018ff720 with 1 and 2: `Toasts.ShinyToastAnimationState` is `preShowing, showing,
+  postShowing`. So the entrance (→ showing; the same function then reads `duration`, [I] to schedule the dismiss) and the exit (→ postShowing, then
+  `dismissCallback`) both run on this spring. It's the only `.spring` in the Toasts module (0x1018e…–0x10191…; the rest
+  are `linear.repeatForever`). What it moves: `Toasts.ScaleInEffect(progress, sourceEdge)`'s `effectValue` (0x101907b64)
+  scales x and y by `progress` around (0.5 w, 0.1 h) for a top edge, (0.1 w, 0.5 h) for a leading one (0x101907adc).
+  That is Cra's `transform.scale` from its top centre, so Cra takes it: `ArcControlSpring.toast`, stiffness 246.74,
+  damping 21.99 (it was 440 / 28, ≈0.30 s, 0.67, fitted to the 2 Nov recording of Arc 1.171). [U] The recording's
+  peak (≈4 % at ≈0.2 s) is earlier than this spring's (4.6 % of the travel at 0.28 s); Arc 1.171 may have differed, or a
+  first frame or two went missing. Not adopted: the exit, which Cra measured as an 80 ms shrink; Arc calls
+  `dismissCallback` right after starting the spring, so what shows is the window going, not the spring.
+- **Picture in Picture, high, not adopted.** The three 0.25 / 0.7 springs (0x1025315d8, 0x1025446c0, 0x102545664,
+  blendDuration 0.1 on two) are not the window's corner snap. Each is a `ButtonStyle.makeBody` in the PictureInPicture
+  module that reads `configuration.isPressed` and feeds a scale: 0x102531374 picks `forward.end.fill` / `backward.end.fill`
+  and 0.8 when pressed (`BackForwardButtonStyle`), 0x102544510 picks `pause` / `play.fill` with 1.05 / 1.0
+  (`PlayPauseButtonStyle`), and 0x102545478 is a third style, likely `AnimatedSkipButtonStyle` [I]. Cra's PiP buttons
+  (`PictureInPictureButton`, PictureInPictureControls.swift:301) darken on press and don't scale, and Cra's corner snap is
+  `PictureInPictureFlight` (PictureInPictureThrow.swift:154, response 0.4, ratio 1), so nothing of Cra's does this motion.
+  [U] Arc's own corner snap: no spring found in the module's window code.
+- **Download progress badge, high, not adopted.** `BaseHomeComponents.DownloadProgressBadge` (descriptor 0x103dd95b8:
+  `progress, _colorPalette, _reduceMotion, _progressRingOpacity, _overallOpacity, _overallScale, _completionScale,
+  _completionOpacity, _iconName, _iconSize`). 0x102648b4c runs 0x102648bbc once progress ≥ 1, and that sets `_iconName` to
+  "checkmark" (offset 0x78) and `_iconSize` to 9 (0x90), then: `withAnimation(.default)` `_overallScale` 0.9;
+  `.easeOut(duration: 0.8).delay(0.15)` `_completionScale` 1.5, `_completionOpacity` 0; `.spring(response: 0.5,
+  dampingFraction: 1).delay(0.15)` (0x102648d20) `_overallScale` 1; `.easeOut(duration: 0.15).delay(1.15)` 1.03;
+  `.easeIn(duration: 0.15).delay(1.3)` `_overallScale` 0.97, `_overallOpacity` 0. Field names for offsets 0x28–0x68 are
+  [I] from the descriptor's order (State<Double> is 16 bytes); 0x28 is set to 0.5 without animation. The badge's body
+  (0x102647784) also has `.interpolatingSpring(mass: 0.1, stiffness: 0.5, damping: 1.2, initialVelocity: 0.5)
+  .repeatForever(autoreverses: false)` when motion isn't reduced (0x102647e0c) [I: arguments in d0–d3 order]. So Arc's
+  spring is a critically damped return of the whole badge from a 0.9 dip, a different motion from Cra's
+  `DownloadProgressBadgeView.pop` (DownloadProgressBadge.swift:121, stiffness 260 / damping 14, ≈0.39 s, ratio 0.43),
+  which pops the check in from 0.4 and the badge from 0.6. Matching Arc means rebuilding the completion sequence
+  above, a change of its own.
+- **The "DownloadsUI" CASpringAnimations are AppTray's, high, not adopted.** 0.5 / 0.4 (0x101d1ed90, 0x101d1ef64,
+  0x101d1f0c8) animate keys `icon_transform`, `subtitle_transform` and `subtitle_opacity`; 0.6 / 0.4 (0x101d264b0,
+  0x101d265fc) `badge_transform` and `badge_opacity`; 0.5 / 0.2 (0x101d23e20) a `CATransform3DMakeScale` under
+  `press_animation`, called from a `mouseDown:` at 0x101d3a148 in AppTray. The keys and the animation-ID fields match
+  `AppTray.AppTrayChildItemView` (`subtitleView, badgeIndicatorLayer, subtitleAnimationID, isSubtitleShowing,
+  badgeAnimationID`); the functions sit between DownloadsUI's last vtable and AppTray's first, which is why they looked
+  like DownloadsUI. Nothing of Cra's downloads does these.
+- **Download rename card, low, not adopted.** Arc's card is `SidebarBanner.DownloadItemView` (`_colorPalette, viewStore,
+  _isStrikethrough`), shown through `SidebarBannerView.AppearanceModifier` (`viewStore, _height`) as
+  `presentationState` goes `initial → appeared → dismissing`. The module stores one shared `.spring(response: 0.6,
+  dampingFraction: 0.4)` (initialiser 0x1025ca5b4, the call at 0x1025ca5dc, global 0x104730db8), read by about ten banner
+  bodies (0x1025c86a8 …); which property it drives for the download banner wasn't traced. As a scale from 0.55 it would
+  overshoot 25 % at 0.33 s, and Cra's recording (DownloadRenameCard.swift:8) saw ≈11 % at 0.29 s, which Cra's 162 / 14.4
+  (≈0.49 s, ratio 0.57) fits. So Cra keeps its fitted spring. [U] The banner's appearance property and curve.
+- **Cra:** `ArcControlSpring` (CraCore), `ArcControlSpringTests`; `ShinyToast.springIn` uses `ArcControlSpring.toast`.
+  Scratch scripts: `/tmp/cra-arc-springs/py/` (ctx.py: a function's strings and stubs; near.py: the nearest vtable
+  owners; callers.py: the doubles before each call).
