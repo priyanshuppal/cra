@@ -53,6 +53,8 @@ enum StoreTests {
         try chromiumAndFirefoxPlansBringIcons()
         try yabKeepsAnyAddress()
         chromiumProfile()
+        repairRunsOnceAfterImport()
+        newImportReArmsRepair()
         try firefoxImport()
         try zenImport()
         try safariImport()
@@ -393,6 +395,77 @@ enum StoreTests {
         expect(store.profiles.count == 1 && work.profileID == client?.id && map.folders == ["Default": "Default", "Profile 2": client!.directoryName],
                "Work goes on a Client profile, Home stays on Default")
         expect(store.arcProfileMoves(plan).isEmpty, "a second rebuild finds nothing to move")
+    }
+
+    /// A Cookies database in a new profile folder with one unpartitioned row per `stale` flag:
+    /// true is a row an import from before the fix wrote (has_cross_site_ancestor = 0).
+    private static func cookiesProfile(stale: [Bool]) -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cra-cookies-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var db: OpaquePointer?
+        sqlite3_open(dir.appendingPathComponent("Cookies").path, &db)
+        sqlite3_exec(db, """
+            CREATE TABLE cookies(host_key TEXT NOT NULL, top_frame_site_key TEXT NOT NULL, has_cross_site_ancestor INTEGER NOT NULL,
+                name TEXT NOT NULL, path TEXT NOT NULL, source_scheme INTEGER NOT NULL, source_port INTEGER NOT NULL);
+            """, nil, nil, nil)
+        for (i, s) in stale.enumerated() {
+            sqlite3_exec(db, "INSERT INTO cookies VALUES ('example.com', '', \(s ? 0 : 1), 'c\(i)', '/', 2, 443)", nil, nil, nil)
+        }
+        sqlite3_close(db)
+        return dir
+    }
+
+    /// Rows Default's Cookies still holds with has_cross_site_ancestor = 0.
+    private static func staleCookies(in dir: URL) -> Int {
+        var db: OpaquePointer?
+        sqlite3_open(dir.appendingPathComponent("Cookies").path, &db)
+        defer { sqlite3_close(db) }
+        return SQLite.rows(db, "SELECT 1 FROM cookies WHERE has_cross_site_ancestor = 0").count
+    }
+
+    /// Start-up scans Cookies for rows an old import wrote until a launch finds none or repairs
+    /// them; after that it doesn't open the database at all.
+    private static func repairRunsOnceAfterImport() {
+        try? FileManager.default.removeItem(at: CredentialImport.cookiesRepairedFile)
+        let dir = cookiesProfile(stale: [true, false])
+        defer { try? FileManager.default.removeItem(at: dir) }
+        CredentialImport.repairImportedCookies(profileDir: dir)
+        expect(staleCookies(in: dir) == 0, "the first launch repairs an old import's cookie")
+        expect(FileManager.default.fileExists(atPath: CredentialImport.cookiesRepairedFile.path), "and records that it did")
+        // A stale row now would only be found by a scan; the second launch makes none.
+        var db: OpaquePointer?
+        sqlite3_open(dir.appendingPathComponent("Cookies").path, &db)
+        sqlite3_exec(db, "INSERT INTO cookies VALUES ('example.org', '', 0, 'late', '/', 2, 443)", nil, nil, nil)
+        sqlite3_close(db)
+        CredentialImport.repairImportedCookies(profileDir: dir)
+        expect(staleCookies(in: dir) == 1, "the second launch doesn't query Cookies again")
+
+        let clean = cookiesProfile(stale: [false])
+        defer { try? FileManager.default.removeItem(at: clean) }
+        try? FileManager.default.removeItem(at: CredentialImport.cookiesRepairedFile)
+        CredentialImport.repairImportedCookies(profileDir: clean)
+        expect(FileManager.default.fileExists(atPath: CredentialImport.cookiesRepairedFile.path),
+               "a profile with nothing to repair is recorded too, so its next launch skips the scan")
+    }
+
+    /// Staging imported cookies makes the next launch look at Cookies again.
+    private static func newImportReArmsRepair() {
+        try? FileManager.default.removeItem(at: CredentialImport.cookiesRepairedFile)
+        let dir = cookiesProfile(stale: [])
+        defer { try? FileManager.default.removeItem(at: dir) }
+        CredentialImport.repairImportedCookies(profileDir: dir)
+        expect(FileManager.default.fileExists(atPath: CredentialImport.cookiesRepairedFile.path), "a clean profile is recorded as repaired")
+        let cookie = ImportedCookie(host: "example.com", name: "sid", value: "v", path: "/", expires: 0, created: 0, lastAccess: 0,
+                                    secure: true, httpOnly: true, sameSite: -1, sourceProfile: nil)
+        _ = CredentialImport.stage(ImportedCredentials(cookies: [cookie]))
+        expect(!FileManager.default.fileExists(atPath: CredentialImport.cookiesRepairedFile.path), "an import that stages cookies re-arms the repair")
+        var db: OpaquePointer?
+        sqlite3_open(dir.appendingPathComponent("Cookies").path, &db)
+        sqlite3_exec(db, "INSERT INTO cookies VALUES ('example.org', '', 0, 'old', '/', 2, 443)", nil, nil, nil)
+        sqlite3_close(db)
+        CredentialImport.repairImportedCookies(profileDir: dir)
+        expect(staleCookies(in: dir) == 0, "and the next launch repairs what it finds")
+        try? FileManager.default.removeItem(at: CredentialImport.pendingFile)
     }
 
     // promise: #131
