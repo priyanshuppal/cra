@@ -49,11 +49,14 @@ import Testing
 
     @Test func aNewDragStartsAfresh() {
         var t = PaneResizeThrottle()
-        #expect(t.shouldApply(now: 100))
-        #expect(!t.shouldApply(now: 100.01))
-        #expect(t.flush())
-        #expect(t.shouldApply(now: 100.02))
-        #expect(!t.flush())
+        // Taken outside #expect: it can't call a mutating method.
+        let first = t.shouldApply(now: 100), held = t.shouldApply(now: 100.01), owed = t.flush()
+        let next = t.shouldApply(now: 100.02), owedAgain = t.flush()
+        #expect(first)
+        #expect(!held)
+        #expect(owed)
+        #expect(next)
+        #expect(!owedAgain)
     }
 
     @Test func thirtyASecond() {
