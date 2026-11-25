@@ -1940,6 +1940,7 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
         if isPeek, !closingPeek {
             if hasPage, !promoted, let parent = peekParent {
                 parent.closedPeek = (currentURL, peekSourceTab, store.clock.now)
+                store.recordClosedPeek()
             }
             // Out of sight (its window closing, ⌘Q to the menu bar): nothing to animate.
             if isParked {

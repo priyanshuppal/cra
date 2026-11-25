@@ -590,6 +590,11 @@ extension SidebarStore {
     /// spaces (a fresh install's empty one) are deleted afterwards and don't take titles.
     @discardableResult
     func apply(_ plan: ImportPlan, includeArchive: Bool, includeSettings: Bool, replacing: [UUID] = []) -> ImportResult {
+        // An import isn't a sidebar edit ⌘Z takes back: its folders and spaces stay.
+        withoutUndo { applyImport(plan, includeArchive: includeArchive, includeSettings: includeSettings, replacing: replacing) }
+    }
+
+    private func applyImport(_ plan: ImportPlan, includeArchive: Bool, includeSettings: Bool, replacing: [UUID]) -> ImportResult {
         var result = ImportResult()
         // A tab or favorite Cra already has (an earlier import, the same address twice here) counts as copied.
         result.report = plan.report(includeArchive: includeArchive)

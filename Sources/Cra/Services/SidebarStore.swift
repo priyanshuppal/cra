@@ -1064,6 +1064,8 @@ final class SidebarStore {
             notifyAskProfileChanges(previousAskProfiles, spaces: changedSpaces)
         }
         let doc = synced.forSync()
+        // Another Mac's sidebar: the steps ⌘Z had were taken on this one's, and would bring back what it deleted.
+        undoStack = SidebarUndo()
         var kept = Set<UUID>()
         for sid in incognitoSpaceIDs.union(blankSpaceIDs) { if let s = spaces[sid] { collectSubtree(of: s, into: &kept) } }
         for id in items.all.keys where !kept.contains(id) { items[id] = nil }
@@ -1181,6 +1183,9 @@ final class SidebarStore {
     /// only live in pinned sections or favorites; dropping a folder into the
     /// today list unpacks it.
     func moveItem(_ id: UUID, to newParent: UUID, index: Int?) {
+        if undoDepth == 0 {
+            return undoable(SidebarUndo.move(count: 1), around: [id, newParent]) { moveItem(id, to: newParent, index: index) }
+        }
         guard var it = items[id], items[newParent] != nil, id != newParent, !isDescendant(newParent, of: id) else { return }
         // A page can't change profile: nothing moves into or out of an incognito window.
         guard isIncognito(item: id) == isIncognito(item: newParent) else { return }
@@ -1274,6 +1279,9 @@ final class SidebarStore {
     /// Moves several items so they end up next to each other, in the given
     /// order, starting at `index` (appended when nil).
     func moveItems(_ ids: [UUID], to newParent: UUID, index: Int?) {
+        if undoDepth == 0 {
+            return undoable(SidebarUndo.move(count: ids.count), around: ids + [newParent]) { moveItems(ids, to: newParent, index: index) }
+        }
         var at = index
         for id in ids {
             moveItem(id, to: newParent, index: at)
@@ -1825,6 +1833,9 @@ final class SidebarStore {
 
     @discardableResult
     func createFolder(named name: String, in parent: UUID, index: Int? = nil) -> SidebarItem {
+        if undoDepth == 0 {
+            return undoable(SidebarUndo.newFolder, around: [parent], created: { [$0.id] }) { createFolder(named: name, in: parent, index: index) }
+        }
         var folder = SidebarItem.folder(name, parent: parent)
         folder.parentID = parent
         items[folder.id] = folder
@@ -1848,6 +1859,12 @@ final class SidebarStore {
 
     @discardableResult
     func createFolder(combining targetID: UUID, with tabIDs: [UUID], named name: String = "New Folder") -> SidebarItem? {
+        if undoDepth == 0 {
+            let pinned = spaceID(ofItem: targetID).flatMap { spaces[$0]?.pinnedContainerID }
+            return undoable(SidebarUndo.newFolder, around: [targetID] + tabIDs + (pinned.map { [$0] } ?? []), created: { (f: SidebarItem?) in f.map { [$0.id] } ?? [] }) {
+                createFolder(combining: targetID, with: tabIDs, named: name)
+            }
+        }
         let tabIDs = tabIDs.filter { $0 != targetID && items[$0]?.isTab == true }
         guard !tabIDs.isEmpty, items[targetID]?.isTab == true,
               let parent = items[targetID]?.parentID, let sid = spaceID(ofItem: targetID), let space = spaces[sid] else { return nil }
@@ -1877,6 +1894,11 @@ final class SidebarStore {
     /// A new folder at the top of the space's pinned list holding these tabs.
     @discardableResult
     func createFolder(with tabIDs: [UUID], named name: String = "New Folder") -> SidebarItem {
+        if undoDepth == 0 {
+            return undoable(SidebarUndo.newFolder, around: tabIDs + [focusedSpace.pinnedContainerID], created: { [$0.id] }) {
+                createFolder(with: tabIDs, named: name)
+            }
+        }
         let folder = createFolder(named: name, in: focusedSpace.pinnedContainerID, index: 0)
         moveItems(tabIDs, to: folder.id, index: nil)
         return items[folder.id] ?? folder
@@ -1884,6 +1906,17 @@ final class SidebarStore {
 
     func deleteFolder(_ id: UUID) {
         guard let f = items[id], f.isFolder else { return }
+        // One step for ⌘Z: the folder, the folders and splits in it and its tabs (a live folder's are the service's).
+        if undoDepth == 0 {
+            let before = f.isLiveFolder ? nil : undoSnapshot(around: [id])
+            let inside = tabs(under: id).map(\.id)
+            withoutUndo { deleteFolder(id) }
+            if let before {
+                undoStack.record(.init(SidebarUndo.deleteFolder, .archived(inside, before)))
+                if !f.isTabGroup { onCloseItems(.deleteFolder, 1) }
+            }
+            return
+        }
         // A live folder's tabs are the service's items, not the user's: they go with it.
         if f.isLiveFolder {
             removeLiveTree(id)
@@ -2298,6 +2331,110 @@ final class SidebarStore {
         items[id] = it
     }
 
+    // MARK: Undo (Arc's window undo manager, ⌘Z off a text field)
+
+    /// ⌘Z's steps, newest last (SidebarUndo). In memory only, as Arc's were.
+    @ObservationIgnored private(set) var undoStack = SidebarUndo()
+    /// Above zero while a step (or an undo) runs: the edits it is made of record nothing of their own.
+    @ObservationIgnored private var undoDepth = 0
+
+    /// Run after Clear or Delete Folder, steps ⌘Z undoes: the app shows Arc's toast saying so (CloseItemsToast).
+    @ObservationIgnored var onCloseItems: (CloseItemsToast.Kind, Int) -> Void = { _, _ in }
+
+    /// What Edit ▸ Undo names after "Undo".
+    var undoLabel: String? { undoStack.label }
+
+    /// What ⌘Z did: put a step back, or found a close for ⇧⌘T's rules (or nothing) and left it to the caller.
+    enum UndoOutcome: Equatable {
+        case undone(String)
+        case reopen
+        case nothing
+    }
+
+    /// ⌘Z: the newest step goes back. One whose items have all gone (closed, or deleted with their space) is
+    /// skipped for the one before it. An undo is an edit like any other: it saves, and sync sends it.
+    func undo() -> UndoOutcome {
+        while let entry = undoStack.pop() {
+            let count = items.changeCount, order = spaceOrder
+            switch entry.kind {
+            case .reopen:
+                return .reopen
+            case .tidy(let sid, let before, let moved):
+                if undoTidy((spaceID: sid, todayBefore: before, moved: moved)) { return .undone(entry.label) }
+                continue
+            case .spaceOrder(let saved):
+                spaceOrder = SidebarUndo.order(saved: saved.filter { spaces[$0] != nil }, current: spaceOrder)
+            case .tree(let snapshot, let created):
+                withoutUndo { putBack(snapshot, created: created) }
+            case .archived(let ids, let snapshot):
+                withoutUndo {
+                    for id in ids { _ = putBackArchived(id) }
+                    putBack(snapshot, created: [])
+                }
+            }
+            if items.changeCount != count || spaceOrder != order {
+                touch()
+                return .undone(entry.label)
+            }
+        }
+        return .nothing
+    }
+
+    /// Runs `body` as one ⌘Z step when no step is running: what it changes in the containers of `ids` can go back.
+    @discardableResult
+    private func undoable<T>(_ label: String, around ids: [UUID], created: (T) -> [UUID] = { _ in [] }, _ body: () -> T) -> T {
+        guard undoDepth == 0 else { return body() }
+        let before = undoSnapshot(around: ids)
+        let count = items.changeCount
+        let result = withoutUndo(body)
+        if items.changeCount != count { undoStack.record(.init(label, .tree(before, created: created(result)))) }
+        return result
+    }
+
+    /// Edits that aren't ⌘Z steps of their own: an import, a step's parts.
+    func withoutUndo<T>(_ body: () -> T) -> T {
+        undoDepth += 1
+        defer { undoDepth -= 1 }
+        return body()
+    }
+
+    /// The sections `ids` are in (Favorites, Pinned, Today), with every folder, split and group in them, as they
+    /// are now. The whole section, so a folder or split the edit removes is in it with its parent.
+    private func undoSnapshot(around ids: [UUID]) -> SidebarUndo.Snapshot {
+        let all = items.all
+        var seen = Set<UUID>()
+        var out: [SidebarItem] = []
+        func add(_ id: UUID) {
+            guard let it = all[id], !it.isTab, seen.insert(id).inserted else { return }
+            out.append(it)
+            for c in it.children { add(c) }
+        }
+        for id in ids {
+            var root = id
+            var hops = 0
+            while let p = all[root]?.parentID, hops < 64 { root = p; hops += 1 }
+            add(root)
+        }
+        return SidebarUndo.Snapshot(containers: out)
+    }
+
+    /// The snapshot's containers back as they were. A split left with one pane is undone again, a folder the step
+    /// made goes once it is empty, and a window's open tab that went back to another space lets go of it.
+    private func putBack(_ snapshot: SidebarUndo.Snapshot, created: [UUID]) {
+        let writes = SidebarUndo.restore(snapshot, in: items.all)
+        for (id, item) in writes { items[id] = item }
+        for c in snapshot.containers where c.isSplit { collapseSplitIfNeeded(c.id) }
+        for id in created where items[id]?.children.isEmpty == true {
+            detach(id)
+            items[id] = nil
+        }
+        for w in prefs.windows {
+            for (sid, tid) in w.selectedTabPerSpace where writes[tid] != nil && !isInSpace(tid, sid) && !spaceIDs(ofItem: tid).contains(sid) {
+                updateWindow(w.id) { $0.selectedTabPerSpace[sid] = nil }
+            }
+        }
+    }
+
     // MARK: Archive
 
     func archiveTab(_ id: UUID, reason: ArchiveReason) { archiveTabs([id], reason: reason) }
@@ -2306,17 +2443,33 @@ final class SidebarStore {
     /// lot. Clear Today, auto-archive, deleting a space and Archive Tabs Above/Below archive thousands
     /// at 5,000 tabs; a full touch() per tab (the document copied, empty groups pruned, a save) made
     /// them quadratic (#614).
-    func archiveTabs<S: Sequence>(_ ids: S, reason: ArchiveReason) where S.Element == UUID {
-        var archived = false
-        for id in ids { archived = archiveOne(id, reason: reason) || archived }
-        if archived { touch() }
+    /// Outside a step of its own (Clear, Delete Folder…), each tab closed goes on ⌘Z's stack for ⇧⌘T's rules to
+    /// bring back, as ⌘Z did before it undid anything else; an auto-archive doesn't. Returns the tabs it archived.
+    @discardableResult
+    func archiveTabs<S: Sequence>(_ ids: S, reason: ArchiveReason) -> [UUID] where S.Element == UUID {
+        var archived: [UUID] = []
+        for id in ids where archiveOne(id, reason: reason) { archived.append(id) }
+        if !archived.isEmpty { touch() }
+        if undoDepth == 0, reason != .auto {
+            for _ in archived.prefix(SidebarUndo.limit) { undoStack.record(.init(SidebarUndo.closeTab, .reopen)) }
+        }
+        return archived
+    }
+
+    /// Several tabs closed as one step (Clear, Archive Tabs Above/Below, Archive Other Tabs): ⌘Z brings them all
+    /// back where they were.
+    @discardableResult
+    private func archiveBatch(_ ids: [UUID], reason: ArchiveReason) -> [UUID] {
+        guard undoDepth == 0 else { return archiveTabs(ids, reason: reason) }
+        let before = undoSnapshot(around: ids)
+        let archived = withoutUndo { archiveTabs(ids, reason: reason) }
+        if !archived.isEmpty { undoStack.record(.init(SidebarUndo.clear(count: archived.count), .archived(archived, before))) }
+        return archived
     }
 
     /// One tab out to the archive, without the touch() that saves: archiveTabs does that once.
     private func archiveOne(_ id: UUID, reason: ArchiveReason) -> Bool {
         guard let it = items[id], it.isTab else { return false }
-        // ⌘Z now brings this tab back, not the tidy before it (Arc's undo stack).
-        lastTidy = nil
         let sid = spaceID(ofItem: id)
         // Each window and space that has it open, every space sharing it for a favorite.
         let shownIn = spaceIDs(ofItem: id)
@@ -2375,6 +2528,13 @@ final class SidebarStore {
 
     @discardableResult
     func restoreArchived(_ id: UUID, select: Bool = true) -> SidebarItem? {
+        guard let it = putBackArchived(id) else { return nil }
+        if select { selectTab(it.id, reshaped: true) } else { touch() }
+        return it
+    }
+
+    /// An archived tab back in the sidebar, without the save: restoreArchived and ⌘Z's batches do that.
+    private func putBackArchived(_ id: UUID) -> SidebarItem? {
         guard let idx = archive.firstIndex(where: { $0.id == id }) else { return nil }
         let entry = archive.remove(at: idx)
         var it = entry.item
@@ -2399,7 +2559,6 @@ final class SidebarStore {
         let index = folder != nil ? min(entry.sourceIndex ?? 0, p.children.count) : entry.wasPinned ? p.children.count : 0
         p.children.insert(it.id, at: index)
         items[parent] = p
-        if select { selectTab(it.id, reshaped: true) } else { touch() }
         return it
     }
 
@@ -2422,7 +2581,7 @@ final class SidebarStore {
         paneStates: [ReopenClosedTab.PaneState] = [],
         at date: Date? = nil
     ) {
-        lastTidy = nil
+        undoStack.record(.init(SidebarUndo.closeTab, .reopen))
         closedPinnedTabs.removeAll { $0.id == id }
         closedPinnedTabs.insert(
             ReopenClosedTab.ClosedPinnedTab(id: id, url: url, title: title, paneStates: paneStates, closedAt: date ?? clock.now),
@@ -2445,6 +2604,12 @@ final class SidebarStore {
             recordClosedPinnedTab(id, url: page?.url, title: page?.title, paneStates: pages)
         }
         return panes
+    }
+
+    /// A Peek closed with a page: ⌘Z reopens it after what came before it (Arc: "Undo prompt for re-opening a
+    /// closed Peek"), as ⇧⌘T does.
+    func recordClosedPeek() {
+        undoStack.record(.init(SidebarUndo.closePeek, .reopen))
     }
 
     func forgetClosedPinnedTab(_ id: UUID) {
@@ -2515,8 +2680,6 @@ final class SidebarStore {
     /// Per space, Today's tabs already considered by Tidy; an unseen loose tab keeps it offered.
     /// Not saved, like Arc's.
     private(set) var tidiedTabs: [UUID: Set<UUID>] = [:]
-    /// What ⌘Z puts back: the last tidy, until a tab closes or a group's header is used.
-    @ObservationIgnored private var lastTidy: (spaceID: UUID, todayBefore: [UUID], moved: [UUID])?
 
     /// Today's top-level tabs, outside any group: what Tidy sorts.
     func looseTodayTabs(_ sid: UUID) -> [SidebarItem] {
@@ -2571,6 +2734,9 @@ final class SidebarStore {
         guard let space = spaces[sid] else { return }
         let today = space.todayContainerID
         if plan.newGroups.isEmpty && plan.joins.isEmpty { markTidied(sid, tabIDs: tabIDs); return }
+        // The run is one step of its own (Tidy's undo), not a move per group.
+        undoDepth += 1
+        defer { undoDepth -= 1 }
         let before = items[today]?.children ?? []
         let looseOrder = Dictionary(uniqueKeysWithValues: looseTodayTabs(sid).enumerated().map { ($0.element.id, $0.offset) })
         func ids(_ indices: [Int]) -> [UUID] {
@@ -2607,7 +2773,8 @@ final class SidebarStore {
             t.children = TidyTabs.order(today: rest, isGroup: { self.items[$0]?.isTabGroup == true }, grouped: [], newGroups: newGroups)
             items[today] = t
         }
-        lastTidy = moved.isEmpty ? nil : (sid, before, moved)
+        // A run that moved nothing takes ⌘Z off the run before it.
+        if moved.isEmpty { undoStack.dropNewestTidy() } else { undoStack.record(.init(SidebarUndo.tidy, .tidy(spaceID: sid, todayBefore: before, moved: moved))) }
         markTidied(sid, tabIDs: tabIDs)
         touch()
     }
@@ -2626,13 +2793,21 @@ final class SidebarStore {
         tidiedTabs[sid] = nil
     }
 
-    /// ⌘Z after a tidy: the tabs it moved go back where they were, its new groups go with them.
+    /// ⌘Z after a tidy, while it is the newest step: the tabs it moved go back where they were, its new
+    /// groups go with them.
     func undoTidy() -> Bool {
-        guard let u = lastTidy, let space = spaces[u.spaceID] else { return false }
-        lastTidy = nil
+        guard let u = undoStack.newestTidy, spaces[u.spaceID] != nil else { return false }
+        _ = undoStack.pop()
+        return undoTidy(u)
+    }
+
+    private func undoTidy(_ u: (spaceID: UUID, todayBefore: [UUID], moved: [UUID])) -> Bool {
+        guard let space = spaces[u.spaceID] else { return false }
         let today = space.todayContainerID
-        for id in u.moved where items[id] != nil && items[id]?.parentID != today {
-            moveItem(id, to: today, index: nil)
+        withoutUndo {
+            for id in u.moved where items[id] != nil && items[id]?.parentID != today {
+                moveItem(id, to: today, index: nil)
+            }
         }
         if var t = items[today] {
             let old = u.todayBefore.filter(t.children.contains)
@@ -2647,9 +2822,10 @@ final class SidebarStore {
     /// Arc's "Remove header": the tabs stay where they are, loose.
     func removeGroupHeader(_ id: UUID) {
         guard let g = items[id], g.isTabGroup, let p = g.parentID, let at = items[p]?.children.firstIndex(of: id) else { return }
-        lastTidy = nil
-        moveItems(g.children, to: p, index: at)
-        touch()
+        undoable(SidebarUndo.removeHeader, around: [id]) {
+            moveItems(g.children, to: p, index: at)
+            touch()
+        }
     }
 
     /// Arc's "Create Folder" on a group header: an open folder of that name leads the space's
@@ -2657,11 +2833,12 @@ final class SidebarStore {
     @discardableResult
     func folderFromGroup(_ id: UUID) -> SidebarItem? {
         guard let g = items[id], g.isTabGroup, let sid = spaceID(ofItem: id), let space = spaces[sid] else { return nil }
-        lastTidy = nil
-        let f = createFolder(named: g.title ?? "Folder", in: space.pinnedContainerID, index: 0)
-        moveItems(g.children, to: f.id, index: nil)
-        touch()
-        return items[f.id]
+        return undoable(SidebarUndo.newFolder, around: [id, space.pinnedContainerID], created: { (f: SidebarItem?) in f.map { [$0.id] } ?? [] }) {
+            let f = createFolder(named: g.title ?? "Folder", in: space.pinnedContainerID, index: 0)
+            moveItems(g.children, to: f.id, index: nil)
+            touch()
+            return items[f.id]
+        }
     }
 
     /// A group whose last tab closed or moved out goes too (Arc never shows an empty header).
@@ -2687,10 +2864,7 @@ final class SidebarStore {
         guard let item = items[id], let parent = item.parentID, let sid = spaceID(ofItem: id),
               spaces[sid]?.todayContainerID == parent,
               let rows = items[parent]?.children, let i = rows.firstIndex(of: id) else { return }
-        archiveTabs(rows[(i + 1)...].flatMap { row -> [UUID] in
-            guard let r = items[row] else { return [] }
-            return (r.isTab ? [r] : tabs(under: row)).map(\.id)
-        }, reason: .manual)
+        archiveRows(rows[(i + 1)...])
     }
 
     /// Arc 1.173.1's ⌥ row under Archive Tabs Below: every Today row over this one (#600).
@@ -2718,7 +2892,7 @@ final class SidebarStore {
     }
 
     private func archiveRows<C: Collection>(_ rows: C) where C.Element == UUID {
-        archiveTabs(Array(rows).flatMap { row -> [UUID] in
+        archiveBatch(Array(rows).flatMap { row -> [UUID] in
             guard let r = items[row] else { return [] }
             return (r.isTab ? [r] : tabs(under: row)).map(\.id)
         }, reason: .manual)
@@ -2727,7 +2901,8 @@ final class SidebarStore {
     /// Arc's Clear on Today (`TodayClear`): the tab each window has on screen in this space and
     /// the tabs in `playing` (the speaker's audible set) stay, with the split or group they're in.
     func clearToday(_ sid: UUID? = nil, playing: Set<UUID>) {
-        archiveTabs(todayClearing(sid, playing: playing), reason: .clear)
+        let cleared = archiveBatch(todayClearing(sid, playing: playing), reason: .clear)
+        if !cleared.isEmpty { onCloseItems(.clear, cleared.count) }
     }
 
     /// Whether Clear on Today would archive anything now: the Tabs menu dims Clear Today when not
@@ -2825,7 +3000,7 @@ final class SidebarStore {
         let favorites = shared ? [] : [space.favoritesContainerID]
         archiveTabs((favorites + [space.pinnedContainerID, space.todayContainerID]).flatMap { tabs(under: $0) }.map(\.id),
                     reason: .spaceDeleted)
-        for c in (favorites + [space.pinnedContainerID]).flatMap({ children(of: $0) }) where c.isFolder { deleteFolder(c.id) }
+        withoutUndo { for c in (favorites + [space.pinnedContainerID]).flatMap({ children(of: $0) }) where c.isFolder { deleteFolder(c.id) } }
         for c in favorites { items[c] = nil }
         items[space.pinnedContainerID] = nil
         items[space.todayContainerID] = nil
@@ -2849,12 +3024,13 @@ final class SidebarStore {
         // Incognito tabs never move into a saved space, nor out of their window (#413).
         guard id != target, !isIncognito(space: id), !isIncognito(space: target), let space = spaces[id], let dest = spaces[target],
               spaceOrder.count > 1 else { return nil }
-        let folder = createFolder(named: space.title, in: dest.pinnedContainerID, index: 0)
+        // Not a ⌘Z step: the space it came from is gone (Arc's "turning a space into a folder" isn't undone here).
+        let folder = withoutUndo { createFolder(named: space.title, in: dest.pinnedContainerID, index: 0) }
         let moving = ((isProfileList(space.favoritesContainerID) ? [] : [space.favoritesContainerID]) + [space.pinnedContainerID, space.todayContainerID])
             .flatMap { children(of: $0) }
             .filter { !$0.isLiveFolder }
             .map(\.id)
-        moveItems(moving, to: folder.id, index: nil)
+        withoutUndo { moveItems(moving, to: folder.id, index: nil) }
         var windows = prefs.windows
         for i in windows.indices where windows[i].focusedSpaceID == id { windows[i].focusedSpaceID = target }
         prefs.windows = windows
@@ -3030,6 +3206,7 @@ final class SidebarStore {
 
     func moveSpace(_ id: UUID, to index: Int) {
         guard let from = spaceOrder.firstIndex(of: id) else { return }
+        if undoDepth == 0, from != min(max(0, index), spaceOrder.count - 1) { undoStack.record(.init(SidebarUndo.moveSpace, .spaceOrder(spaceOrder))) }
         spaceOrder.remove(at: from)
         spaceOrder.insert(id, at: min(max(0, index), spaceOrder.count))
         touch()

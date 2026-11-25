@@ -5649,3 +5649,27 @@ Owners come from Swift type descriptors (fields and nesting, read from `__swift5
 - **Cra:** `ArcControlSpring` (CraCore), `ArcControlSpringTests`; `ShinyToast.springIn` uses `ArcControlSpring.toast`.
   Scratch scripts: `/tmp/cra-arc-springs/py/` (ctx.py: a function's strings and stubs; near.py: the nearest vtable
   owners; callers.py: the doubles before each call).
+
+## Undo in the sidebar (26 Nov 2026, Arc 1.174.3, binary only)
+
+- **Read from the binary:** Arc's undo is per window (`SharedWindowFeature/Undo/ArcUndoManager+Live.swift`,
+  `WindowReducer+Undo.swift`, `CloseItemsUndoConfiguration`). Its menu titles are under 16 bytes, so they're kept
+  inline in the code rather than in `__cstring`: each was decoded from the `movz`/`movk` pair loaded beside its
+  comment string (arm64 slice). "Undo prompt for moving a single item" / "…multiple items": **Move Item** / **Move
+  Items**. "Undo prompt for undoing clearing a single tab" / "…multiple tabs": **Clear Tab** / **Clear Tabs**. "Undo
+  creating a new folder": **New Folder…**. "Undo moving a space": **Move Space**. "Undo/Redo prompt for creating a
+  space." / "…deleting a space.": **New Space** / **Delete Space**. "Undo prompt for removing tab group header":
+  **Remove Header**, beside **Tidy Tabs**.
+- **Toasts:** "Title for toast that confirms tabs were cleared": **Cleared Tabs**. "Confirmation toast when a sidebar
+  far was been deleted" / "…multiple sidebar folders are deleted": **Folder deleted** / **Folders deleted**. The undo
+  copy (Toasts/ToastController): "Beginning of the copy for undo shortcut" **! Use**, "End of the copy for undo
+  shortcut" **to undo.**, with the ⌘Z keys between ("Copy for Command Z keys in undo shortcut"). "Auto archived %d
+  tabs" ("Toast indicating that tabs were archived.") exists too; when Arc shows it isn't in the strings.
+- **Cra:** `SidebarUndo` (CraCore) holds the steps, `SidebarStore.undo()` puts one back, Edit ▸ Undo is titled from
+  it. A close stays ⇧⌘T's (ReopenClosedTab), in order with the other steps.
+- **Cra's toasts:** `CloseItemsToast` after Clear ("Cleared Tabs! Use ⌘Z to undo.") and Delete Folder ("Folder
+  deleted! Use ⌘Z to undo."), the keys in ShinyToast's cap. Archive Tabs Above/Below and auto-archive stay silent:
+  Arc's strings name no toast for the first, and say nothing of when "Auto archived %d tabs" shows.
+- **Open questions:** Arc's titles for a closed tab, a closed Peek and Delete Folder (Cra: Close Tab, Close Peek,
+  Delete Folder); whether Archive Tabs Above/Below show a toast (Archive Tabs on several picks showed none, see
+  above); Redo.
