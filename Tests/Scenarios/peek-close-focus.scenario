@@ -1,0 +1,46 @@
+# Closing a Peek gives the keys back to the browser window as the close starts. The Peek stayed key until
+# its closing motion ended (0.16 s, after up to 80 ms waiting for the card's screenshot), so a key pressed
+# right after Esc or ⌘W went to the vanishing Peek. `peek close keys:` is read where the motion starts,
+# before the Peek window goes: `peek` without the fix.
+requires screen
+# Cra has to come to the front to have a key window; a background test copy never does.
+env CRA_TEST_BACKGROUND=0
+budget rss=900 stalls50=40
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false, "peekInEveryTab": true}
+
+cra://open?url=${PAGE}?n=hub
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+wait 1
+cra://action/pinTab
+wait 0.5
+cra://debug?activate=1
+wait 1
+
+# Esc closes the Peek; the browser window has the keys before the motion runs.
+cra://debug?cdp=Runtime.evaluate&params={"expression":"String(!!window.open('${PAGE}?n=peeked'))","userGesture":true}
+expect-log peek: from
+wait 1.5
+cra://debug?front=open
+expect-log front open: key=LittleWindow
+cra://debug?key=%1B,53,0&page=1&target=little
+expect-log peek close keys: browser
+wait 1.5
+cra://debug?peeks=closed
+expect-log Cra peeks closed: none$
+cra://debug?front=closed
+expect-log front closed: key=CraWindow
+
+# ⌘W the same.
+cra://debug?cdp=Runtime.evaluate&params={"expression":"String(!!window.open('${PAGE}?n=peeked-again'))","userGesture":true}
+expect-log peek: from
+wait 1.5
+cra://debug?front=again
+expect-log front again: key=LittleWindow
+cra://action/closeTab
+wait 1.5
+cra://debug?peeks=closedAgain
+expect-log Cra peeks closedAgain: none$
+cra://debug?front=closedAgain
+expect-log front closedAgain: key=CraWindow
+# Neither close left the keys with the Peek as it went.
+reject-log peek close keys: (peek|elsewhere)
