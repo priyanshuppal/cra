@@ -100,6 +100,7 @@ enum StoreTests {
         folderPeekAfterClosing()
         collapsedPinnedPeek()
         closeSuccessor()
+        splitCloseFocusesTheNeighbour()
         favoritesEmptyState()
         sharedFavorites()
         profileTabsSpaceBySpace()
@@ -2972,6 +2973,34 @@ enum StoreTests {
         expect(store.selectedTabID(in: a.id, window: window.id).map { ![t1.id, t2.id, t3.id].contains($0) } ?? true, "source selection does not follow moved tab")
         store.moveTab(folder.id, toSpace: b.id, window: nil)
         expect(store.children(of: b.pinnedContainerID).map(\.id) == [existing.id, folder.id] && store.children(of: folder.id).map(\.id) == [t1.id, nested.id, t3.id], "moving to own space does nothing")
+    }
+
+    /// Closing the focused pane of a split that stays (three panes or more) focuses its neighbour,
+    /// the pane that slides into its place or the one before the last: it read the split's
+    /// children after the pane had left them, so the first pane always took focus.
+    @MainActor
+    private static func splitCloseFocusesTheNeighbour() {
+        let store = AppComposition(clock: ManualScheduler()).store
+        func split(_ name: String) -> [UUID] {
+            let panes = ["a", "b", "c"].map { store.createTab(url: "https://example.com/\(name)-\($0)", select: false).id }
+            let s = store.createSplit(with: panes)!
+            expect(store.children(of: s.id).map(\.id) == panes, "the split \(name) holds its three panes in order")
+            return panes
+        }
+        let last = split("last")
+        store.selectTab(last[2])
+        store.archiveTab(last[2], reason: .manual)
+        expect(store.selectedTabID == last[1], "closing the last of [A B C] focuses B, the pane before it, not A")
+
+        let first = split("first")
+        store.selectTab(first[0])
+        store.archiveTab(first[0], reason: .manual)
+        expect(store.selectedTabID == first[1], "closing A of [A B C] focuses B, which takes its place")
+
+        let middle = split("middle")
+        store.selectTab(middle[1])
+        store.archiveTab(middle[1], reason: .manual)
+        expect(store.selectedTabID == middle[2], "closing B of [A B C] focuses C, which takes its place")
     }
 
     // promise: #105
