@@ -1,5 +1,6 @@
 // vdisplay: a virtual Retina display for test copies of Cra, alive as long as this process runs.
 //   vdisplay [width-points height-points]     default 1728 1117 (a 16" MacBook Pro), at 2x, named "Cra Test Display"
+//   vdisplay width-points height-points 1x  the same at 1x, named "Cra Test Display 1x" (an external monitor, a scenario's `screen 1x`)
 // Prints "ready <id> <x>,<y> <w>x<h>" once the display is extended (not mirrored) below the main one, then waits.
 // Scenarios run on it with CRA_TEST_SCREEN="Cra Test Display" (scripts/test-display.sh): GitHub's macOS runners have
 // one small 1x screen, where a 1200x800 window doesn't fit and the scenarios' geometry and 2x snapshots fail.
@@ -38,6 +39,8 @@ int main(int argc, const char* argv[]) {
   @autoreleasepool {
     unsigned int width = argc > 2 ? (unsigned int)atoi(argv[1]) : 1728;
     unsigned int height = argc > 2 ? (unsigned int)atoi(argv[2]) : 1117;
+    BOOL oneX = argc > 3 && strcmp(argv[3], "1x") == 0;
+    unsigned int scale = oneX ? 1 : 2;
     Class descriptorClass = NSClassFromString(@"CGVirtualDisplayDescriptor");
     Class displayClass = NSClassFromString(@"CGVirtualDisplay");
     if (!descriptorClass || !displayClass) {
@@ -46,13 +49,13 @@ int main(int argc, const char* argv[]) {
     }
     CGVirtualDisplayDescriptor* descriptor = [[descriptorClass alloc] init];
     descriptor.queue = dispatch_get_main_queue();
-    descriptor.name = @"Cra Test Display";
-    descriptor.maxPixelsWide = width * 2;
-    descriptor.maxPixelsHigh = height * 2;
+    descriptor.name = oneX ? @"Cra Test Display 1x" : @"Cra Test Display";
+    descriptor.maxPixelsWide = width * scale;
+    descriptor.maxPixelsHigh = height * scale;
     descriptor.sizeInMillimeters = CGSizeMake(width * 0.2, height * 0.2);
     descriptor.productID = 0xC7A1;
     descriptor.vendorID = 0xC7A0;
-    descriptor.serialNum = 1;
+    descriptor.serialNum = scale;  // the 1x and 2x displays can be up at once
     descriptor.terminationHandler = ^(id a, id b) {
       fprintf(stderr, "vdisplay: macOS ended the display\n");
       exit(1);
@@ -63,7 +66,7 @@ int main(int argc, const char* argv[]) {
       return 1;
     }
     CGVirtualDisplaySettings* settings = [[NSClassFromString(@"CGVirtualDisplaySettings") alloc] init];
-    settings.hiDPI = 1;
+    settings.hiDPI = oneX ? 0 : 1;
     settings.modes = @[ [[NSClassFromString(@"CGVirtualDisplayMode") alloc] initWithWidth:width
                                                                                    height:height
                                                                               refreshRate:60] ];

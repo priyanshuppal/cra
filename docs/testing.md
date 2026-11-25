@@ -156,6 +156,11 @@ on throwaway profiles; `scripts/scenario.sh <name>` runs one without the rest of
 which half each window draws (`cra://debug?themeShown=<label>`): an Auto space must switch its
 window content and sidebar both ways, and a Light one must not (#155).
 
+`sidebar-pixel-grid` runs on a virtual 1x display of its own (`screen 1x`, "Cra Test Display 1x" from
+`scripts/test-display.sh <w> <h> 1x`), where a half point falls between pixels, and reads
+`cra://debug?offGrid=<label>&in=rows`: every text field, image view and text layer in the sidebar's rows must start
+on a whole pixel (CraCore's `PixelGrid`). At 2x a half point is a whole pixel, so only 1x catches it.
+
 `fullscreen` takes over a Space and runs only with `CRA_SCENARIO_SCREEN=1` (CI does).
 So do `pip-window-covered` and `pip-window-minimised`: a background copy reports every window
 visible, so automatic Picture in Picture of a window out of sight only runs on screen. They cover

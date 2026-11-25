@@ -1,0 +1,17 @@
+# Sidebar text and icons on whole pixels on a 1x display, as Arc snaps them (backingAlignedRect). Rows centred their
+# parts with `/ 2`: a tab with a subtitle put its title at (40 − 16 − 1 − 14) / 2 = 4.5 pt, between two pixels at 1x,
+# where the text is resampled and goes soft. The made-up Arc profile (pinned folder, favorites, a split in Today) and
+# a 127.0.0.1 page in Developer Mode, whose row has the host as a subtitle; cra://debug?offGrid lists every text
+# field, image view and text layer in the rows whose window origin is between pixels, and there must be none.
+budget rss=600 stalls50=10   # turning developer mode on stalls 130–650 ms (a reload)
+screen 1x
+cra://debug?windowSize=1280x800
+cra://import?source=arc&archive=0&settings=0
+wait 2
+cra://open?url=${PAGE}?n=grid
+expect-log loaded 127\.0\.0\.1
+cra://action/toggleDeveloperMode
+wait 2
+cra://debug?offGrid=window
+cra://debug?offGrid=rows&in=rows
+expect-log off grid rows: none \([1-9][0-9]* checked at 1\.0x\)

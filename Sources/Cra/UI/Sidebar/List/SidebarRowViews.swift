@@ -671,6 +671,18 @@ class SidebarRowView: NSView {
         }
     }
 
+    /// Rows snap their parts to the window's pixels (`snap`), which a row laid out before it had a
+    /// window, or on a display of another scale, hasn't done.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        needsLayout = true
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
         fillLayer.frame = fillRect
@@ -1386,22 +1398,22 @@ final class TabRowView: SidebarRowView, ArcTooltipTarget, NSTextFieldDelegate {
         let lead = RecordingDot.leading(iconX: Double(CraMetrics.rowLeading + CGFloat(m.depth) * CraMetrics.indent), recording: showsCaptureDot)
         if let dx = lead.dotX {
             let d = CGFloat(RecordingDot.diameter)
-            captureDot.frame = NSRect(x: CGFloat(dx), y: (h - d) / 2, width: d, height: d)
+            captureDot.frame = snap(NSRect(x: CGFloat(dx), y: (h - d) / 2, width: d, height: d))
         }
         var x = CGFloat(lead.iconX)
-        favicon.frame = NSRect(x: x, y: (h - CraMetrics.favicon) / 2, width: CraMetrics.favicon, height: CraMetrics.favicon)
+        favicon.frame = snap(NSRect(x: x, y: (h - CraMetrics.favicon) / 2, width: CraMetrics.favicon, height: CraMetrics.favicon))
         if m.navigatedAway {
             // Arc: 4 pt, the slash, then the name 5 pt on (2 pt later than without it).
             x += CraMetrics.favicon + 4
             let s = SidebarSlashView.size
-            slash.frame = NSRect(x: x, y: ((h - s.height) / 2).rounded(), width: s.width, height: s.height)
+            slash.frame = snap(NSRect(x: x, y: ((h - s.height) / 2).rounded(), width: s.width, height: s.height))
             x += s.width + 5
         } else {
             x += CraMetrics.favicon + 11
         }
         if showsSound {
             let s = soundButton.size
-            soundButton.frame = NSRect(x: x - (s.width - Self.soundGlyphWidth) / 2, y: (h - s.height) / 2, width: s.width, height: s.height)
+            soundButton.frame = snap(NSRect(x: x - (s.width - Self.soundGlyphWidth) / 2, y: (h - s.height) / 2, width: s.width, height: s.height))
             x += Self.soundGlyphWidth + 8
         }
         // The unread dot and a peek badge are centred where the close button shows on hover, which
@@ -1412,21 +1424,22 @@ final class TabRowView: SidebarRowView, ArcTooltipTarget, NSTextFieldDelegate {
         })
         for (v, vx) in zip(accessories, trailing.controlX) {
             let s = v.frame.size
-            v.frame = NSRect(x: vx, y: (h - s.height) / 2, width: s.width, height: s.height)
+            v.frame = snap(NSRect(x: vx, y: (h - s.height) / 2, width: s.width, height: s.height))
         }
         let textWidth = trailing.textWidth
         let th = titleLabel.intrinsicContentSize.height
         if shownSubtitle != nil {
             let sh = subtitleLabel.intrinsicContentSize.height
             let top = (h - th - 1 - sh) / 2
-            titleLabel.frame = NSRect(x: x - SidebarText.inset, y: top, width: textWidth + 2 * SidebarText.inset, height: th)
-            subtitleLabel.frame = NSRect(x: x - SidebarText.inset, y: top + th + 1, width: textWidth + 2 * SidebarText.inset, height: sh)
+            // (40 − 16 − 1 − 14) / 2 = 4.5 pt: snapped, or the text is resampled between pixels at 1x.
+            titleLabel.frame = snap(NSRect(x: x - SidebarText.inset, y: top, width: textWidth + 2 * SidebarText.inset, height: th))
+            subtitleLabel.frame = snap(NSRect(x: x - SidebarText.inset, y: top + th + 1, width: textWidth + 2 * SidebarText.inset, height: sh))
         } else {
-            titleLabel.frame = NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: textWidth + 2 * SidebarText.inset, height: th)
+            titleLabel.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: textWidth + 2 * SidebarText.inset, height: th))
         }
         if let f = renameField {
             let fh = f.intrinsicContentSize.height
-            f.frame = NSRect(x: x - SidebarText.inset, y: (h - fh) / 2, width: max(0, bounds.width - 6 - x + SidebarText.inset), height: fh)
+            f.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - fh) / 2, width: max(0, bounds.width - 6 - x + SidebarText.inset), height: fh))
         }
         focusRing?.frame = fillRect
         sharedRing?.frame = fillRect
@@ -1677,21 +1690,21 @@ final class FolderRowView: SidebarRowView, NSTextFieldDelegate {
         guard let m = model else { return }
         let h = bounds.height
         var x = CraMetrics.rowLeading + CGFloat(m.depth) * CraMetrics.indent
-        glyph.frame = NSRect(x: x, y: (h - 20) / 2, width: CraMetrics.favicon, height: 20)
+        glyph.frame = snap(NSRect(x: x, y: (h - 20) / 2, width: CraMetrics.favicon, height: 20))
         x += CraMetrics.favicon + 11
         var right = bounds.width
         if let a = accessory {
             let s = a.frame.size
             // A live folder's button is centred over its tabs' unread dots and close buttons (17 pt in).
             right -= (m.live ? 4 : 8) + s.width
-            a.frame = NSRect(x: right, y: (h - s.height) / 2, width: s.width, height: s.height)
+            a.frame = snap(NSRect(x: right, y: (h - s.height) / 2, width: s.width, height: s.height))
             right -= 11
         }
         let th = titleLabel.intrinsicContentSize.height
-        titleLabel.frame = NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 8 - 11 - x) + 2 * SidebarText.inset, height: th)
+        titleLabel.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 8 - 11 - x) + 2 * SidebarText.inset, height: th))
         if let f = renameField {
             let fh = f.intrinsicContentSize.height
-            f.frame = NSRect(x: x - SidebarText.inset, y: (h - fh) / 2, width: max(0, bounds.width - 8 - x + SidebarText.inset), height: fh)
+            f.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - fh) / 2, width: max(0, bounds.width - 8 - x + SidebarText.inset), height: fh))
         }
     }
 
@@ -1942,21 +1955,21 @@ final class SplitRowView: SidebarRowView, NSTextFieldDelegate, ArcTooltipTarget 
         let button = closeButton.isHidden ? nil
             : NSRect(x: fill.maxX - SplitRowMetrics.buttonInset - SplitRowMetrics.button, y: (bounds.height - SplitRowMetrics.button) / 2,
                      width: SplitRowMetrics.button, height: SplitRowMetrics.button)
-        if let button { closeButton.frame = button }
+        if let button { closeButton.frame = snap(button) }
         focusRing?.frame = fillRect
         if m.named {
             // Laid out as a tab's row: the badge where the favicon goes, the name 11 pt on.
             let h = bounds.height
             var x = CraMetrics.rowLeading + CGFloat(m.depth) * CraMetrics.indent
-            countBadge.frame = NSRect(x: x, y: (h - CraMetrics.favicon) / 2, width: CraMetrics.favicon, height: CraMetrics.favicon)
+            countBadge.frame = snap(NSRect(x: x, y: (h - CraMetrics.favicon) / 2, width: CraMetrics.favicon, height: CraMetrics.favicon))
             iconView.frame = countBadge.frame
             x += CraMetrics.favicon + 11
             let right = button?.minX ?? bounds.width - 6
             let th = titleLabel.intrinsicContentSize.height
-            titleLabel.frame = NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 4 - x) + 2 * SidebarText.inset, height: th)
+            titleLabel.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 4 - x) + 2 * SidebarText.inset, height: th))
             if let f = renameField {
                 let fh = f.intrinsicContentSize.height
-                f.frame = NSRect(x: x - SidebarText.inset, y: (h - fh) / 2, width: max(0, bounds.width - 6 - x + SidebarText.inset), height: fh)
+                f.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - fh) / 2, width: max(0, bounds.width - 6 - x + SidebarText.inset), height: fh))
             }
             return
         }
@@ -1970,6 +1983,7 @@ final class SplitRowView: SidebarRowView, NSTextFieldDelegate, ArcTooltipTarget 
             // The row's button takes the end of the last pane (Arc shortens its pill to 5 pt before it).
             if let button, i == cells.count - 1 { cw = max(0, button.minX - SplitRowMetrics.cellToButton - x) }
             c.frame = NSRect(x: x, y: fill.minY, width: cw, height: fill.height)
+            c.needsLayout = true  // a cell moved by a fraction snaps its favicon and title again
             x += w + gap
         }
     }
@@ -2104,7 +2118,7 @@ final class SplitCountBadgeView: NSView {
     override func layout() {
         super.layout()
         let h = label.intrinsicContentSize.height
-        label.frame = NSRect(x: 0, y: (bounds.height - h) / 2, width: bounds.width, height: h)
+        label.frame = snap(NSRect(x: 0, y: (bounds.height - h) / 2, width: bounds.width, height: h))
     }
 }
 
@@ -2179,16 +2193,16 @@ final class SplitCellView: NSView, ArcTooltipTarget {
         pill.frame = bounds.insetBy(dx: 0, dy: SplitRowMetrics.pillInset)
         CATransaction.commit()
         let fx = SplitRowMetrics.favicon
-        favicon.frame = NSRect(x: fx, y: (h - CraMetrics.favicon) / 2, width: CraMetrics.favicon, height: CraMetrics.favicon)
+        favicon.frame = snap(NSRect(x: fx, y: (h - CraMetrics.favicon) / 2, width: CraMetrics.favicon, height: CraMetrics.favicon))
         var right = bounds.width
         if let close {
             let s = SplitRowMetrics.button
-            close.frame = NSRect(x: right - SplitRowMetrics.paneButtonInset - s, y: (h - s) / 2, width: s, height: s)
+            close.frame = snap(NSRect(x: right - SplitRowMetrics.paneButtonInset - s, y: (h - s) / 2, width: s, height: s))
             right = close.frame.minX
         }
         let th = titleLabel.intrinsicContentSize.height
         let x = fx + CraMetrics.favicon + 11
-        titleLabel.frame = NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 4 - x) + 2 * SidebarText.inset, height: th)
+        titleLabel.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 4 - x) + 2 * SidebarText.inset, height: th))
     }
 
     var text: String { title }
@@ -2270,7 +2284,7 @@ final class LiveStatusRowView: SidebarRowView {
         super.layout()
         guard let m = model else { return }
         let x = Self.leading(depth: m.depth)
-        label.frame = NSRect(x: x - SidebarText.inset, y: 8, width: max(0, bounds.width - x - 10) + 2 * SidebarText.inset, height: max(0, bounds.height - 16))
+        label.frame = snap(NSRect(x: x - SidebarText.inset, y: 8, width: max(0, bounds.width - x - 10) + 2 * SidebarText.inset, height: max(0, bounds.height - 16)))
     }
 
     override func click(_ event: NSEvent, at point: NSPoint) {
@@ -2418,13 +2432,13 @@ final class InstantLinksRowView: SidebarRowView {
         var right = bounds.width - TabRowTrailing.endInset
         if showsClose {
             let s = closeButton.size
-            closeButton.frame = NSRect(x: right - s.width, y: (h - s.height) / 2, width: s.width, height: s.height)
+            closeButton.frame = snap(NSRect(x: right - s.width, y: (h - s.height) / 2, width: s.width, height: s.height))
             right = closeButton.frame.minX - TabRowTrailing.controlGap
         } else {
             right = bounds.width - TabRowTrailing.restingTail
         }
         let th = titleLabel.intrinsicContentSize.height
-        titleLabel.frame = NSRect(x: textX - SidebarText.inset, y: (h - th) / 2, width: max(0, right - textX) + 2 * SidebarText.inset, height: th)
+        titleLabel.frame = snap(NSRect(x: textX - SidebarText.inset, y: (h - th) / 2, width: max(0, right - textX) + 2 * SidebarText.inset, height: th))
     }
 }
 
@@ -2567,13 +2581,13 @@ final class NewTabRowView: SidebarRowView {
         let x = CraMetrics.rowLeading + CraMetrics.favicon + 9
         let w = max(0, bounds.width - 10 - x) + 2 * SidebarText.inset
         guard !preview.isHidden else {
-            label.frame = NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: w, height: th)
+            label.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: w, height: th))
             return
         }
         let ph = preview.intrinsicContentSize.height
         let top = (h - th - ph) / 2
-        label.frame = NSRect(x: x - SidebarText.inset, y: top, width: w, height: th)
-        preview.frame = NSRect(x: x - SidebarText.inset, y: top + th, width: w, height: ph)
+        label.frame = snap(NSRect(x: x - SidebarText.inset, y: top, width: w, height: th))
+        preview.frame = snap(NSRect(x: x - SidebarText.inset, y: top + th, width: w, height: ph))
     }
 
     override func click(_ event: NSEvent, at point: NSPoint) {
@@ -2712,14 +2726,14 @@ final class DividerRowView: SidebarRowView {
         var right = bounds.width - 18
         if let clear {
             let s = clear.fittingSize
-            clear.frame = NSRect(x: bounds.width - 20 - s.width, y: (bounds.height - s.height) / 2, width: s.width, height: s.height)
+            clear.frame = snap(NSRect(x: bounds.width - 20 - s.width, y: (bounds.height - s.height) / 2, width: s.width, height: s.height))
             right = clear.frame.minX - 8
             if let tidy = tidyButton {
                 // Arc 1.171, 2x capture of a 347 pt sidebar: the hairline 11 pt before "Clear", the
                 // line 9.5 pt before the broom.
                 let t = tidy.fittingSize
-                tidy.frame = NSRect(x: clear.frame.minX - TidyButton.trailingGap - t.width, y: (bounds.height - t.height) / 2,
-                                    width: t.width, height: t.height)
+                tidy.frame = snap(NSRect(x: clear.frame.minX - TidyButton.trailingGap - t.width, y: (bounds.height - t.height) / 2,
+                                         width: t.width, height: t.height))
                 right = tidy.frame.minX + TidyButton.broomInkInset - 9.5
             }
         }
@@ -3105,12 +3119,12 @@ final class GroupHeaderRowView: SidebarRowView {
         // Arc: the ✕ ends 5 pt in from the row, the folder button right before it.
         var right = bounds.width - 5
         for b in buttons.reversed() {
-            b.frame = NSRect(x: right - b.size.width, y: (h - b.size.height) / 2, width: b.size.width, height: b.size.height)
+            b.frame = snap(NSRect(x: right - b.size.width, y: (h - b.size.height) / 2, width: b.size.width, height: b.size.height))
             right = b.frame.minX
         }
         let x = CraMetrics.rowLeading
         let th = titleLabel.intrinsicContentSize.height
-        titleLabel.frame = NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 8 - x) + 2 * SidebarText.inset, height: th)
+        titleLabel.frame = snap(NSRect(x: x - SidebarText.inset, y: (h - th) / 2, width: max(0, right - 8 - x) + 2 * SidebarText.inset, height: th))
     }
 
     override func contextMenu(at point: NSPoint) -> NSMenu? {
@@ -3167,7 +3181,7 @@ final class PinPlaceholderRowView: SidebarRowView {
         let ls = label.intrinsicContentSize
         let w = 14 + 6 + ls.width
         let x = (bounds.width - w) / 2
-        icon.frame = NSRect(x: x, y: 0, width: 14, height: bounds.height)
-        label.frame = NSRect(x: x + 20, y: (bounds.height - ls.height) / 2, width: ls.width, height: ls.height)
+        icon.frame = snap(NSRect(x: x, y: 0, width: 14, height: bounds.height))
+        label.frame = snap(NSRect(x: x + 20, y: (bounds.height - ls.height) / 2, width: ls.width, height: ls.height))
     }
 }
