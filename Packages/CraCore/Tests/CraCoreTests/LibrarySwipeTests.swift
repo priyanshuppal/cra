@@ -59,10 +59,66 @@ struct LibrarySwipeTests {
         #expect(LibrarySwipe.target(reveal: CGFloat(reveal), velocity: CGFloat(velocity)) == CGFloat(target))
     }
 
+    /// Each sample's travel came before its timestamp: 10 pt every 20 ms is 500 pt/s, 4/3 of a 375 pt page a second.
     @Test func velocityFromRecentSamples() {
         let samples: [(time: Double, dx: CGFloat)] = [(1.00, 10), (1.02, 10), (1.04, 10)]
-        #expect(abs(LibrarySwipe.velocity(samples: samples, width: 375) - 2) < 0.001)
+        #expect(abs(LibrarySwipe.velocity(samples: samples, width: 375) - 4.0 / 3) < 0.001)
         #expect(LibrarySwipe.velocity(samples: [(1, 5)], width: 375) == 0)
+        #expect(LibrarySwipe.velocity(samples: [(1, 5), (1, 5)], width: 375) == 0)
+        #expect(LibrarySwipe.velocity(samples: [], width: 375) == 0)
+    }
+
+    /// The samples a swipe holds when the fingers lift after moving at `speed` points a second, an event every
+    /// `interval` seconds: each appended, then the window trimmed, as MainWindowController's swipes do.
+    private func samples(speed: CGFloat, interval: TimeInterval) -> [(time: TimeInterval, dx: CGFloat)] {
+        var kept: [(time: TimeInterval, dx: CGFloat)] = []
+        for i in 1...Int((0.3 / interval).rounded()) {
+            let time = 1 + Double(i) * interval
+            kept.append((time, speed * CGFloat(interval)))
+            kept.removeAll { time - $0.time > LibrarySwipe.velocityWindow }
+        }
+        return kept
+    }
+
+    /// The reading before the fix: every sample's travel over the first to last sample's time.
+    private func oldReading(_ samples: [(time: TimeInterval, dx: CGFloat)], width: CGFloat) -> CGFloat {
+        samples.reduce(0) { $0 + $1.dx } / CGFloat(samples.last!.time - samples.first!.time) / width
+    }
+
+    /// A ProMotion trackpad reports at 120 Hz. The old reading ran 5/4 fast at 60 Hz but 10/9 at 120 Hz, so a flick
+    /// that went between spaces at 60 Hz snapped back at 120 Hz. The same flick now reads the same at either rate.
+    @Test(.bug(id: "promotion-swipe-velocity")) func sameFlickAt60And120HzGivesTheSameVelocity() {
+        let at60 = samples(speed: 1000, interval: 1.0 / 60), at120 = samples(speed: 1000, interval: 1.0 / 120)
+        #expect(at60.count == 5 && at120.count == 10)
+        let v60 = LibrarySwipe.velocity(samples: at60, width: 300), v120 = LibrarySwipe.velocity(samples: at120, width: 300)
+        #expect(abs(v60 / v120 - 1) < 0.01)
+        #expect(abs(v60 - 1000.0 / 300) < 0.01)
+        // The old reading's bias at 60 Hz is the constant the thresholds and settles are scaled by.
+        #expect(abs(oldReading(at60, width: 300) / v60 - LibrarySwipe.sixtyHertzBias) < 0.001)
+        #expect(abs(oldReading(at120, width: 300) / v120 - 10.0 / 9) < 0.001)
+        // A flick just past the 60 Hz threshold: it used to snap back at 120 Hz, and now goes its way.
+        let flick = 0.82 / LibrarySwipe.sixtyHertzBias * 300
+        let promotion = samples(speed: flick, interval: 1.0 / 120)
+        #expect(oldReading(promotion, width: 300) < 0.8)
+        #expect(LibrarySwipe.target(reveal: 0.2, velocity: LibrarySwipe.velocity(samples: promotion, width: 300)) == 1)
+        #expect(SpaceCreationSwipe.leaves(pull: 0.2, velocity: LibrarySwipe.velocity(samples: promotion, width: 300)))
+    }
+
+    /// The thresholds were tuned on a 60 Hz trackpad: a 60 Hz stream that passed the old 0.8 still passes, one that
+    /// failed still fails, and the settle starts at the speed it did.
+    @Test(arguments: [0.78, 0.79, 0.81, 0.82, 1.5])
+    func aBorderlineSixtyHertzFlickStillDecidesTheSame(oldSpeed: Double) {
+        let width: CGFloat = 300
+        let stream = samples(speed: CGFloat(oldSpeed) / LibrarySwipe.sixtyHertzBias * width, interval: 1.0 / 60)
+        let old = oldReading(stream, width: width)
+        #expect(abs(old - CGFloat(oldSpeed)) < 0.001)
+        let v = LibrarySwipe.velocity(samples: stream, width: width)
+        let passed = old > 0.8
+        #expect((v > LibrarySwipe.flickSpeed) == passed)
+        #expect(LibrarySwipe.target(reveal: 0.2, velocity: v) == (passed ? 1 : 0))
+        #expect(LibrarySwipe.target(reveal: 0.8, velocity: -v) == (passed ? 0 : 1))
+        #expect(SpaceCreationSwipe.leaves(pull: 0.2, velocity: v) == passed)
+        #expect(abs(v * LibrarySwipe.sixtyHertzBias - old) < 0.001)
     }
 
     /// The space swipe's spring: critically damped, so it never overshoots, and it picks up

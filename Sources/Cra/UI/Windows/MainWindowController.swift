@@ -3950,7 +3950,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         let velocity = LibrarySwipe.velocity(samples: swipeSamples, width: width)
         let target = LibrarySwipe.target(reveal: r, velocity: velocity)
         if swipeHaptics.land(on: -Int(target.rounded())) { performSwipeHaptic() }
-        settleLibrary(from: r, velocity: velocity, to: target)
+        // The spring starts at the speed it was tuned on (LibrarySwipe.sixtyHertzBias).
+        settleLibrary(from: r, velocity: velocity * LibrarySwipe.sixtyHertzBias, to: target)
     }
 
     /// The Library button: the same spring from rest, or turned around from where a settle is.
@@ -4183,7 +4184,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         let width = max(1, shell.sidebarWidth)
         swipeTravel += dx
         swipeSamples.append((time, dx))
-        swipeSamples.removeAll { time - $0.time > 0.08 }
+        swipeSamples.removeAll { time - $0.time > LibrarySwipe.velocityWindow }
         if swipeSpent || trackLibrarySwipe() { return }
         let index = CGFloat(store.spaceOrder.firstIndex(of: focusedSpaceID) ?? 0)
         let first = -index, last = CGFloat(store.spaceOrder.count - 1) - index
@@ -4284,7 +4285,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         guard sidebarUI.spaceCreation != nil else { return }
         swipeTravel += dx
         swipeSamples.append((time, dx))
-        swipeSamples.removeAll { time - $0.time > 0.08 }
+        swipeSamples.removeAll { time - $0.time > LibrarySwipe.velocityWindow }
         let pull = SpaceCreationSwipe.pull(travel: swipeTravel, width: max(1, shell.sidebarWidth))
         (shell.sidebarHost as? SidebarView)?.setCreationPull(pull)
     }
@@ -4294,9 +4295,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         guard creationSwiping else { return }
         creationSwiping = false
         guard sidebarUI.spaceCreation != nil, let sidebar = shell.sidebarHost as? SidebarView else { return }
-        let span = (swipeSamples.last?.time ?? 0) - (swipeSamples.first?.time ?? 0)
-        let moved = swipeSamples.reduce(0) { $0 + $1.dx }
-        let velocity = span > 0.004 ? moved / CGFloat(span) / max(1, shell.sidebarWidth) : 0
+        let velocity = LibrarySwipe.velocity(samples: swipeSamples, width: shell.sidebarWidth)
         let pull = sidebar.creationPull
         let leaves = SpaceCreationSwipe.leaves(pull: pull, velocity: velocity)
         CraLog.note("space creation swipe: lifted \(String(format: "%.2f", Double(pull))) out, \(leaves ? "leaves" : "goes back")")
@@ -4452,18 +4451,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         librarySwipeFrom = nil
         let width = max(1, shell.sidebarWidth)
         let pages = sidebarUI.spaceSwipe
-        let span = (swipeSamples.last?.time ?? 0) - (swipeSamples.first?.time ?? 0)
-        let moved = swipeSamples.reduce(0) { $0 + $1.dx }
-        // Pages per second; a lone sample carries no timing, so treat it as a slow lift.
-        let velocity = span > 0.004 ? -moved / CGFloat(span) / width : 0
+        // Pages per second, + toward the next space (fingers left); a lone sample reads as a slow lift.
+        let velocity = -LibrarySwipe.velocity(samples: swipeSamples, width: width)
         let index = store.spaceOrder.firstIndex(of: focusedSpaceID) ?? 0
         var step = 0
-        if abs(velocity) > 0.8 { step = velocity > 0 ? 1 : -1 } else if abs(pages) > 0.5 { step = pages > 0 ? 1 : -1 }
+        if abs(velocity) > LibrarySwipe.flickSpeed { step = velocity > 0 ? 1 : -1 } else if abs(pages) > 0.5 { step = pages > 0 ? 1 : -1 }
         if !(0..<store.spaceOrder.count).contains(index + step) { step = 0 }
         // A flick lands on a page it never dragged past half of: the tick comes now (#260).
         if swipeHaptics.land(on: step) { performSwipeHaptic() }
         let remaining = CGFloat(step) - pages
-        sidebarUI.spaceSettleVelocity = abs(remaining) > 0.001 ? Double(max(-4, min(12, velocity / remaining))) : 0
+        // The spring starts at the speed it was tuned on (LibrarySwipe.sixtyHertzBias).
+        let settleSpeed = velocity * LibrarySwipe.sixtyHertzBias
+        sidebarUI.spaceSettleVelocity = abs(remaining) > 0.001 ? Double(max(-4, min(12, settleSpeed / remaining))) : 0
         // The new space becomes the strip's page at once and the swipe returns to rest; the space
         // pager and the window tint spring from where they show to the page in Core Animation
         // (SpacePagerView, PagedGradientView), so a busy main thread doesn't stop the settle.
