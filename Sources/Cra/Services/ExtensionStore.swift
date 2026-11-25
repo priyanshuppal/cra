@@ -59,14 +59,24 @@ final class ExtensionStore {
 
     /// The folders --load-extension loads at start-up, in name order, and the switch that says
     /// which profiles load each (CraCEFRuntime.setExtensionPaths).
-    nonisolated static func loadList(profileIsFree: Bool = true) -> (paths: [String], profiles: String?) {
+    /// `readSettings` reads a profile folder's extensions.settings (a seam for the tests).
+    nonisolated static func loadList(profileIsFree: Bool = true,
+                                     readSettings: (URL) -> [String: Any] = ExtensionImporter.settings(inProfile:))
+        -> (paths: [String], profiles: String?) {
         let fm = FileManager.default
         // Before Chromium starts: a copy the store already installed in a profile must not load
         // there again, or --load-extension would put the copy back over the store's install.
         let profiles = chromiumProfiles()
-        if profileIsFree {
-            let settings = { (profile: String) in
-                ExtensionImporter.settings(inProfile: AppPaths.chromiumCache.appendingPathComponent(profile, isDirectory: true))
+        let hasCopies = ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []).contains { !$0.hasPrefix(".") }
+        if profileIsFree && hasCopies {
+            // Each profile's Preferences and Secure Preferences are parsed once, not once per
+            // copy and pass: nothing writes them before Chromium starts.
+            var cache: [String: [String: Any]] = [:]
+            let settings = { (profile: String) -> [String: Any] in
+                if let cached = cache[profile] { return cached }
+                let read = readSettings(AppPaths.chromiumCache.appendingPathComponent(profile, isDirectory: true))
+                cache[profile] = read
+                return read
             }
             dropWebStoreCopies(profiles: profiles, settings: settings)
             dropUnpackedCopies(profiles: profiles, settings: settings)

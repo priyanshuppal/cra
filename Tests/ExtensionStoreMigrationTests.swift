@@ -268,6 +268,36 @@ enum ExtensionStoreMigrationTests {
         }
     }
 
+    /// Start-up parses each profile's Preferences and Secure Preferences once, not once per
+    /// copy in Extensions/ and per pass, and not at all when Extensions/ holds no copies.
+    static func preferencesReadOncePerProfile() throws {
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CRA_DATA_DIR"]!, isDirectory: true)
+        AppPaths.supportDir = root.appendingPathComponent("preferences-read-once", isDirectory: true)
+        CraCEFRuntime.settingsByProfile = [:]
+        let fm = FileManager.default
+        for profile in ["Default", "Profile 1"] {
+            try writeSettings([:], in: AppPaths.chromiumCache.appendingPathComponent(profile, isDirectory: true))
+        }
+        var reads = 0
+        let counting = { (dir: URL) -> [String: Any] in
+            reads += 1
+            return ExtensionImporter.settings(inProfile: dir)
+        }
+        check(ExtensionStore.loadList(readSettings: counting).paths.isEmpty && reads == 0,
+              "with no copies in Extensions/ no profile's preferences are read")
+
+        let copies = ["copy-a", "copy-b", "copy-c"].map { ExtensionStore.directory.appendingPathComponent($0, isDirectory: true) }
+        for (i, copy) in copies.enumerated() {
+            try fm.createDirectory(at: copy, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: ["manifest_version": 3, "name": "Copy \(i)", "version": "1.0"])
+                .write(to: copy.appendingPathComponent("manifest.json"))
+        }
+        reads = 0
+        let list = ExtensionStore.loadList(readSettings: counting)
+        check(reads <= 2, "3 copies and 2 profiles read each profile's preferences once (read \(reads) times)")
+        check(list.paths == copies.map(\.path) && list.profiles == nil, "every copy still loads in every profile")
+    }
+
     static func main() throws {
         try removedCopiesStayRemoved()
         try pinnedComeOnlyFromAnImportedBrowser()
@@ -446,6 +476,7 @@ enum ExtensionStoreMigrationTests {
 
         try unpackedCopiesStepAside()
         try incognitoListsOnlyAllowed()
+        try preferencesReadOncePerProfile()
 
         print("ExtensionStoreMigrationTests: \(checks) checks, \(failures.count) failures")
         if !failures.isEmpty { exit(1) }
