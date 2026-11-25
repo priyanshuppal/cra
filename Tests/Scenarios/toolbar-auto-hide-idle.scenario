@@ -1,0 +1,39 @@
+# Settings ▸ Tabs ▸ "Hide the toolbar until you need it" (not in Arc), at rest. The browser window looked at the
+# pointer 20 times a second while the bar floated, so a frontmost Cra woke 20 times a second with the pointer
+# resting mid-page. The shell's tracking area now samples the pointer as it moves, and the only timer is a
+# one-shot look the tracker asks for (the wait in the strip, the delay before the bar goes). `toolbar=move`
+# samples a stand-in pointer as a move does (the real pointer of a scenario's copy can be anywhere), and
+# `toolbar=timers:<label>` counts the looks the timer took since the last `timers`.
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": true, "autoHideToolbar": true}
+cra://debug?windowSize=1200x800
+cra://open?url=${PAGE}?n=idle
+expect-log loaded 127\.0\.0\.1 \(HTTP 200\)
+wait 2
+# Parked mid-page with the bar away: nothing waits, and nothing wakes while the pointer rests.
+cra://debug?toolbar=move:700,400
+expect-log toolbar move:700,400: out=0 look=0
+cra://debug?toolbar=timers:1
+wait 2
+cra://debug?toolbar=timers:2
+expect-log toolbar timers:2: out=0 look=0 looks=0
+# To the top edge: one look after the dwell brings the bar out.
+cra://debug?toolbar=move:700,4
+expect-log toolbar move:700,4: out=0 look=1
+wait 0.5
+cra://debug?toolbar=timers:3
+expect-log toolbar timers:3: out=1 look=0 looks=1
+# Resting on the bar: still out, and nothing wakes.
+wait 2
+cra://debug?toolbar=timers:4
+expect-log toolbar timers:4: out=1 look=0 looks=0
+# Back to the middle of the page: one look after the delay takes the bar away, then nothing again.
+cra://debug?toolbar=move:700,400
+expect-log toolbar move:700,400: out=1 look=1
+wait 1
+cra://debug?toolbar=timers:5
+expect-log toolbar timers:5: out=0 look=0 looks=1
+wait 2
+cra://debug?toolbar=timers:6
+expect-log toolbar timers:6: out=0 look=0 looks=0
+cra://debug?toolbar=gone
+expect-log toolbar gone: floats=1 out=0 inset=0 page=[0-9]+/[0-9]+ short=0 barHidden=1 look=0

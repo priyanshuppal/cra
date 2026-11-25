@@ -230,9 +230,16 @@ final class ShellView: NSView {
     }
     /// Whether the floating toolbar is out, from where the pointer is and how long it has been there.
     private var toolbarTracker = ToolbarAutoHideTracker()
-    /// The pointer is looked at on a timer while the bar floats and Cra is the active app: as for
-    /// the floating sidebar, no window of ours reliably gets mouse-moved events over a page.
-    private var toolbarPoll: Timer?
+    /// The tracker's next look, when it asked for one (a wait in the strip, the delay before the bar
+    /// goes). The pointer is sampled as the shell's tracking area sees it move: the page is a view in
+    /// the window (the bar floats only then), so moves over it come here too, as in the Little Window.
+    /// Nothing wakes while the pointer rests and nothing waits.
+    private var toolbarLook: Timer?
+    /// What holds the bar out and ends without the pointer moving: the windows hanging from it
+    /// (closed, ordered out, or giving up the keyboard) and any menu's tracking.
+    private var toolbarHoldWatch: [NSObjectProtocol] = []
+    /// How many looks the timer took, for `cra://debug?toolbar=timers`: none while the pointer rests.
+    private var toolbarLooks = 0
     private var toolbarActivation: [NSObjectProtocol] = []
     /// The window's first responder, watched while a bar floats: Tab onto one of its buttons brings it out.
     private var toolbarFocusWatch: NSKeyValueObservation?
@@ -814,6 +821,7 @@ final class ShellView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
+        sampleToolbarPointerOnMove()
         let p = convert(event.locationInWindow, from: nil)
         guard FloatingSidebarGeometry.mayReveal(sidebarShown: sidebarVisible, pageFullscreen: contentFullscreen) else { return }
         if !floatingSidebar, FloatingSidebarGeometry.shouldReveal(at: p, in: bounds, edgeToEdge: fillsWindow, side: sidebarSide,
@@ -831,6 +839,20 @@ final class ShellView: NSView {
     /// controller's pointer monitor decides instead.
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        // Onto the find bar, a popover or past the window's top: one look at where the pointer went.
+        sampleToolbarPointerOnMove()
+    }
+
+    /// Back from a window over the shell (the find bar, a popover): the pointer is over the page again.
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        sampleToolbarPointerOnMove()
+    }
+
+    /// The tracking area reports moves in the background too (for the sidebar's edge); the bar listens
+    /// only while Cra is the active app, as it comes out only then.
+    private func sampleToolbarPointerOnMove() {
+        if floatingCard != nil, NSApp.isActive { sampleToolbarPointer() }
     }
 
     /// While the sidebar floats in its own panel (Chrome-style hosting puts page
@@ -882,20 +904,30 @@ final class ShellView: NSView {
                     MainActor.assumeIsolated { self?.toolbarActivationChanged() }
                 }
             }
+            // A menu pulled from the bar (a button's menu, a right click) held it; the pointer may be
+            // away by the time it closes, without moving again.
+            toolbarActivation.append(NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil,
+                                                                            queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.toolbarHoldEnded() }
+            })
         }
+        if floatingCard == nil { stopToolbarLook() }
         syncToolbarFocusWatch()
-        syncToolbarPolling()
     }
 
     private func toolbarActivationChanged() {
         // Another app in front: the bar goes with the pointer's attention, as the floating sidebar does.
-        if !NSApp.isActive, toolbarTracker.shown {
+        if !NSApp.isActive {
+            stopToolbarLook()
+            guard toolbarTracker.shown else { return }
             toolbarTracker.reset()
             if let card = floatingCard { reveal(card, false, animated: true) }
+            return
         }
-        // Back in front with a button still focused: the bar comes back out for it.
-        if NSApp.isActive { toolbarFocusChanged() }
-        syncToolbarPolling()
+        // Back in front with a button still focused: the bar comes back out for it. The pointer may
+        // already be at the top of the card: one look.
+        toolbarFocusChanged()
+        if floatingCard != nil { sampleToolbarPointer() }
     }
 
     /// The first responder is watched only while a bar floats, in the window the shell is in.
@@ -925,28 +957,59 @@ final class ShellView: NSView {
     private func toolbarFocusChanged() {
         let inBar = toolbarHasFocus
         guard let card = floatingCard, inBar != toolbarTracker.focused else { return }
-        toolbarTracker.focus(inBar, at: toolbarNow())
+        let due = toolbarTracker.focus(inBar, at: toolbarNow())
         reveal(card, toolbarTracker.shown, animated: true)
+        // The focus left: the bar goes after the usual delay if the pointer is away by then.
+        scheduleToolbarLook(due)
     }
 
-    private func syncToolbarPolling() {
-        let on = floatingCard != nil && window != nil && NSApp.isActive
-        guard on != (toolbarPoll != nil) else { return }
-        toolbarPoll?.invalidate()
-        toolbarPoll = nil
-        guard on else { return }
-        // Fired on the main run loop, so no hop to the main actor. It stops with the app's
-        // activation and with the setting, so a Cra in the background or with the toolbar above
-        // the page wakes for none of this.
-        toolbarPoll = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.sampleToolbarPointer() }
+    private func stopToolbarLook() {
+        toolbarLook?.invalidate()
+        toolbarLook = nil
+    }
+
+    /// One look at the pointer at `due`, when the tracker asked for one. It samples the pointer again
+    /// rather than repeating the last sample, so a pointer that left past the window's top without
+    /// another move is seen where it is.
+    private func scheduleToolbarLook(_ due: TimeInterval?) {
+        stopToolbarLook()
+        guard let due else { return }
+        // Fired on the main run loop, so no hop to the main actor.
+        toolbarLook = Timer.scheduledTimer(withTimeInterval: max(0, due - toolbarNow()), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.toolbarLook = nil
+                self.toolbarLooks += 1
+                self.sampleToolbarPointer()
+            }
         }
-        toolbarPoll?.tolerance = 0.015
+    }
+
+    /// Something that held the bar out ended (a popover closed, a menu, a drag): one more look, since
+    /// the pointer may be away by now without moving again. Taken after the event that ended it, so a
+    /// popover being ordered out no longer counts as hanging.
+    func toolbarHoldEnded() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.floatingCard != nil, self.toolbarTracker.shown else { return }
+            self.sampleToolbarPointer()
+        }
+    }
+
+    /// Watches the windows hanging from the bar until the next sample: whichever goes first ends the hold.
+    private func watchToolbarHold(_ hanging: [NSWindow]) {
+        for o in toolbarHoldWatch { NotificationCenter.default.removeObserver(o) }
+        toolbarHoldWatch = hanging.flatMap { child in
+            [NSWindow.willCloseNotification, NSWindow.didChangeOcclusionStateNotification, NSWindow.didResignKeyNotification].map { name in
+                NotificationCenter.default.addObserver(forName: name, object: child, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.toolbarHoldEnded() }
+                }
+            }
+        }
     }
 
     /// One look at the pointer.
     func sampleToolbarPointer() {
-        guard let card = floatingCard else { return }
+        guard let card = floatingCard else { stopToolbarLook(); watchToolbarHold([]); return }
         let where_: ToolbarAutoHide.Pointer
         if let p = toolbarPointer() {
             where_ = ToolbarAutoHide.classify(p, card: convert(card.frame, from: card.superview), container: bounds,
@@ -956,9 +1019,15 @@ final class ShellView: NSView {
             where_ = .away
         }
         // A button held down (a drag begun on the bar) or something hanging under the bar keeps it.
-        let held = toolbarTracker.shown && (NSEvent.pressedMouseButtons != 0 || somethingHangsFromToolbar(card))
-        toolbarTracker.sample(where_, held: held, at: toolbarNow())
+        let hanging = toolbarTracker.shown ? windowsHangingFromToolbar(card) : []
+        let pressed = toolbarTracker.shown && NSEvent.pressedMouseButtons != 0
+        var due = toolbarTracker.sample(where_, held: pressed || !hanging.isEmpty, at: toolbarNow())
         reveal(card, toolbarTracker.shown, animated: true)
+        watchToolbarHold(hanging)
+        // A drag gives no moves to the shell and may end anywhere, its mouse-up unseen (a window drag,
+        // a drop outside): look again shortly while a button is down, which is only while the hand is on it.
+        if pressed, due == nil { due = toolbarNow() + 0.25 }
+        scheduleToolbarLook(due)
     }
 
     /// Where the bar's followers are, in this view's coordinates.
@@ -969,11 +1038,13 @@ final class ShellView: NSView {
 
     /// A popover or popup of Cra's hangs from the bar (the Site Control Center, an extension's
     /// popup, Translate): the bar stays out under it wherever the pointer goes.
-    private func somethingHangsFromToolbar(_ card: PaneCardView) -> Bool {
-        guard let window else { return false }
+    private func somethingHangsFromToolbar(_ card: PaneCardView) -> Bool { !windowsHangingFromToolbar(card).isEmpty }
+
+    private func windowsHangingFromToolbar(_ card: PaneCardView) -> [NSWindow] {
+        guard let window else { return [] }
         let cardOnScreen = window.convertToScreen(card.convert(card.bounds, to: nil))
         let followers = toolbarFollowers()
-        return (window.childWindows ?? []).contains { child in
+        return (window.childWindows ?? []).filter { child in
             child.isVisible && child.alphaValue > 0 && !followers.contains { $0 === child }
                 && ToolbarAutoHide.hangsFromBar(child.frame, card: cardOnScreen, barHeight: card.toolbarHeight)
         }
@@ -982,14 +1053,26 @@ final class ShellView: NSView {
     /// Something is about to hang under the bar, or asked for it: out now, without the slide, so
     /// what hangs there finds the bar's buttons where they are.
     func bringFloatingToolbarOut() {
-        guard let card = floatingCard, !toolbarTracker.shown else { return }
+        guard putFloatingToolbarOut() else { return }
+        // Once what asked for it hangs there, a look sees it holding the bar (and watches for it to
+        // go); with nothing there, the bar goes the usual way if the pointer is away.
+        toolbarHoldEnded()
+    }
+
+    @discardableResult
+    private func putFloatingToolbarOut() -> Bool {
+        guard let card = floatingCard, !toolbarTracker.shown else { return false }
         toolbarTracker.bringOut()
         reveal(card, true, animated: false)
+        return true
     }
 
     /// For `cra://debug?toolbar=…`: `out` and `in` put the floating bar there, `sample` looks at
-    /// the pointer once, `at:x,y` says what a pointer there would be to the bar; anything else is
-    /// a label. Every one answers with the command and where the bar is.
+    /// the pointer once, `at:x,y` says what a pointer there would be to the bar, `move:x,y` puts a
+    /// stand-in pointer there and samples it as a move over the shell does (the real pointer of a
+    /// scenario's copy can be anywhere), `timers[:label]` says whether a look is waiting and how many the
+    /// timer took since the last `timers`; anything else is a label. Every one answers with the
+    /// command and where the bar is.
     /// toolbarColor=<label>: the colour behind the first pane's bar as RRGGBB ("#" starts a comment in a
     /// scenario), "white" when it has none (#629).
     func toolbarColorReadout(_ label: String) -> String {
@@ -1004,9 +1087,10 @@ final class ShellView: NSView {
 
     func debugToolbar(_ command: String) -> String {
         switch command {
-        case "out": bringFloatingToolbarOut()
+        case "out": putFloatingToolbarOut()
         case "in":
             toolbarTracker.reset()
+            stopToolbarLook()
             if let card = floatingCard { reveal(card, false, animated: false) }
         case "sample": sampleToolbarPointer()
         // The keyboard focus on the bar's first button that takes it, as Tab puts it there with Full
@@ -1020,6 +1104,18 @@ final class ShellView: NSView {
         }
         layoutSubtreeIfNeeded()
         let card = paneCards.first
+        if command.hasPrefix("move:"), let window {
+            let g = command.dropFirst(5).split(separator: ",").compactMap { Double($0) }
+            guard g.count == 2 else { return "toolbar move: x,y" }
+            let p = convert(NSPoint(x: g[0], y: window.frame.height - g[1]), from: nil)
+            toolbarPointer = { p }
+            if floatingCard != nil { sampleToolbarPointer() }
+            return "toolbar \(command): out=\(toolbarTracker.shown ? 1 : 0) look=\(toolbarLook != nil ? 1 : 0)"
+        }
+        if command.hasPrefix("timers") {
+            defer { toolbarLooks = 0 }
+            return "toolbar \(command): out=\(toolbarTracker.shown ? 1 : 0) look=\(toolbarLook != nil ? 1 : 0) looks=\(toolbarLooks)"
+        }
         // at:x,y (from the window's top left, as clickAt takes them): what a pointer there is to the bar.
         if command.hasPrefix("at:"), let card, let window {
             let g = command.dropFirst(3).split(separator: ",").compactMap { Double($0) }
@@ -1034,7 +1130,7 @@ final class ShellView: NSView {
             + "inset=\(Int(card?.barInset ?? 0)) page=\(Int(card?.webArea.frame.height ?? 0))/\(Int(card?.bounds.height ?? 0)) "
             // How much of the card the page doesn't fill, whatever the window's size (a runner's screen gave 771, not 780).
             + "short=\(Int((card?.bounds.height ?? 0) - (card?.webArea.frame.height ?? 0))) "
-            + "barHidden=\(card?.toolbarInSight == true ? 0 : 1) polling=\(toolbarPoll != nil ? 1 : 0) "
+            + "barHidden=\(card?.toolbarInSight == true ? 0 : 1) look=\(toolbarLook != nil ? 1 : 0) "
             + "hangs=\(card.map(somethingHangsFromToolbar) == true ? 1 : 0) focus=\(toolbarHasFocus ? 1 : 0)"
     }
 
