@@ -205,8 +205,18 @@ final class SystemAppearance: @unchecked Sendable {
     /// takes it, as Arc's one appearance setting does (#700).
     private(set) var forcedDark: Bool?
 
+    /// Posted on the main thread in the same turn as a change to `isDark` or `forcedDark`, inside one
+    /// CATransaction without implicit animations: the windows redraw their sidebars and backdrops from
+    /// it with the card, which follows NSApp's appearance at once, so no frame shows half the old look.
+    /// Observation alone reaches its readers a main-queue hop later.
+    static let changed = Notification.Name("CraSystemAppearanceChanged")
+
     /// View ▸ Appearance changed (WebsiteAppearance.forcesDark).
-    @MainActor func setForced(_ dark: Bool?) { if dark != forcedDark { forcedDark = dark } }
+    @MainActor func setForced(_ dark: Bool?) {
+        guard dark != forcedDark else { return }
+        forcedDark = dark
+        postChanged()
+    }
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
     @MainActor func start() {
@@ -218,7 +228,16 @@ final class SystemAppearance: @unchecked Sendable {
 
     @MainActor private func update() {
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        if dark != isDark { isDark = dark }
+        guard dark != isDark else { return }
+        isDark = dark
+        postChanged()
+    }
+
+    @MainActor private func postChanged() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        NotificationCenter.default.post(name: Self.changed, object: self)
+        CATransaction.commit()
     }
 }
 

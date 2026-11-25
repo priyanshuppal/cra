@@ -84,6 +84,8 @@ final class SidebarView: NSView {
     /// The palette drawn now; the theme-shown scenario hook reads it (#155).
     private(set) var palette: SpacePalette
     private var lastSpaceID: UUID?
+    /// The space whose palette the sidebar's parts show (showTheme).
+    private var shownSpaceID: UUID?
     private var shownTheme: SpaceTheme?
     /// The player's colour setting and the glass it was drawn for (Ideas #366), to recolour it on a change.
     private var shownPlayerLook: (tint: NowPlayingTint, glass: Bool)?
@@ -119,6 +121,14 @@ final class SidebarView: NSView {
         observe()
         observeCreation()
         observeRenameCard()
+        // A switch of appearance recolours the sidebar in the turn the window's backdrop and card follow it;
+        // observe() still runs a hop later and finds it shown.
+        NotificationCenter.default.addObserver(forName: SystemAppearance.changed, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.showTheme(of: self.store.focusedSpace(window: self.ui.windowID))
+            }
+        }
     }
 
     // MARK: Tidy Downloads' card
@@ -192,16 +202,26 @@ final class SidebarView: NSView {
         } onChange: { [weak self] in
             Task { @MainActor in self?.observe() }
         }
-        let playerLook = (tint: store.settings.nowPlayingTint, glass: SidebarGlassSetting.shared.isOn)
-        let paletteChanged = lastSpaceID == nil || space.theme.shown != shownTheme || space.id != lastSpaceID
-            || shownPlayerLook.map { $0 != playerLook } ?? true
-        shownTheme = space.theme.shown
-        shownPlayerLook = playerLook
+        showTheme(of: space)
         if space.id != lastSpaceID {
             // A drag that hovered another space's icon carries the picks there; its end clears them.
             if lastSpaceID != nil, ui.draggingID == nil { ui.clearPicks() }
             lastSpaceID = space.id
         }
+        self.bannerHeight = bannerHeight
+        updateTrayMask(open: trayOpen, rows: recentCount)
+        showLibrary(library)
+        needsLayout = true
+    }
+
+    /// The space's palette to the sidebar's parts, when it is not the one shown.
+    private func showTheme(of space: Space) {
+        let playerLook = (tint: store.settings.nowPlayingTint, glass: SidebarGlassSetting.shared.isOn)
+        let paletteChanged = shownSpaceID == nil || space.theme.shown != shownTheme || space.id != shownSpaceID
+            || shownPlayerLook.map { $0 != playerLook } ?? true
+        shownTheme = space.theme.shown
+        shownPlayerLook = playerLook
+        shownSpaceID = space.id
         if paletteChanged || palette.isDark != space.theme.palette.isDark {
             palette = space.theme.palette
             let colors = SidebarColors(palette)
@@ -215,10 +235,6 @@ final class SidebarView: NSView {
             creationHost?.palette = palette
             newSpacePlus.ink = colors.textPrimary
         }
-        self.bannerHeight = bannerHeight
-        updateTrayMask(open: trayOpen, rows: recentCount)
-        showLibrary(library)
-        needsLayout = true
     }
 
     // MARK: Create a Space

@@ -1,0 +1,16 @@
+# A switch of macOS' appearance (Automatic at sunset, or View ▸ Appearance) recolours the sidebar, the
+# window's backdrop and the empty card in one main-thread turn, so no frame shows half the old look.
+# systemAppearance=…&themeShown=… reads them back in the turn of the switch, before anything deferred
+# runs. Until 0.1.55 the backdrop and sidebar waited a main-queue hop behind the card. The first space
+# is on Auto, with no tab (empty-card-appearance.scenario).
+budget rss=700 stalls50=10
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true}
+cra://debug?windowSize=1280x800
+wait 1
+cra://debug?systemAppearance=light
+wait 1
+cra://debug?systemAppearance=dark&themeShown=same-turn-dark
+expect-log Cra theme shown same-turn-dark: .* theme=dark shell=dark sidebar=dark .* card=veil=0\.35
+cra://debug?systemAppearance=light&themeShown=same-turn-light
+expect-log Cra theme shown same-turn-light: .* theme=light shell=light sidebar=light .* card=veil=0\.65
+cra://debug?systemAppearance=system
