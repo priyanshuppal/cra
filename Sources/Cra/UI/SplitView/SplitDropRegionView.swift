@@ -9,7 +9,7 @@ final class SplitDropRegionView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerCurve = .continuous
+        layer?.cornerCurve = .card
         layer?.cornerRadius = cornerRadius
         layer?.borderWidth = 1
         refresh()

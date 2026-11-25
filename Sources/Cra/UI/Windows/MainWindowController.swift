@@ -1913,7 +1913,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
                 if let cv = w.contentView {
                     cv.wantsLayer = true
                     cv.layer?.cornerRadius = CraMetrics.contentCornerRadius
-                    cv.layer?.cornerCurve = .continuous
+                    cv.layer?.cornerCurve = .card
                     cv.layer?.maskedCorners = cv.isFlipped ? [.layerMinXMaxYCorner, .layerMaxXMaxYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner]
                     cv.layer?.masksToBounds = true
                 }
@@ -2254,7 +2254,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         mask.backgroundColor = NSColor.black.cgColor
         // The moving edge is the card's edge, rounded like it.
         mask.cornerRadius = layer.cornerRadius
-        mask.cornerCurve = .continuous
+        mask.cornerCurve = layer.cornerCurve
         mask.maskedCorners = layer.maskedCorners
         mask.frame = end
         layer.mask = mask
@@ -2321,7 +2321,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         let topRight: CACornerMask = cv.isFlipped ? .layerMaxXMinYCorner : .layerMaxXMaxYCorner
         // The whole mask, not only the corner set: a rebuilt layer would otherwise keep
         // whatever radius and clipping it came with.
-        if layer.cornerCurve != .continuous { layer.cornerCurve = .continuous }
         if !layer.masksToBounds { layer.masksToBounds = true }
         // Edge to edge the card is square, but a page window is not clipped by the main
         // window: where it meets the window's corners it takes their radius. With Rounded
@@ -2330,6 +2329,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
             roundAtWindowCorners(layer, rect: page, flipped: cv.isFlipped)
             return
         }
+        // The card's own curve, the one its shadow is cut along (CardFill.cornerCurve).
+        if layer.cornerCurve != .card { layer.cornerCurve = .card }
         // The card's round as ShellView has it: Arc's 6 pt in its margin, more at a narrow one (#366), 0 in full screen.
         let radius = shell.paneCornerRadius
         if layer.cornerRadius != radius { layer.cornerRadius = radius }
@@ -2362,6 +2363,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
             if abs(rect.minX - w.minX) < 0.5 { corners.insert(flipped ? .layerMinXMinYCorner : .layerMinXMaxYCorner) }
             if abs(rect.maxX - w.maxX) < 0.5 { corners.insert(flipped ? .layerMaxXMinYCorner : .layerMaxXMaxYCorner) }
         }
+        // The window's own corner, which stays continuous; the card's curve is only for card corners.
+        if layer.cornerCurve != .continuous { layer.cornerCurve = .continuous }
         if layer.cornerRadius != radius { layer.cornerRadius = radius }
         if layer.maskedCorners != corners { layer.maskedCorners = corners }
     }
@@ -2573,12 +2576,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         guard let cv = w.contentView else { return }
         cv.wantsLayer = true
         guard let layer = cv.layer else { return }
-        layer.cornerCurve = .continuous
         layer.masksToBounds = true
         if shell.fillsWindow, !shell.roundsFilledCards, let window {
             roundAtWindowCorners(layer, rect: window.convertFromScreen(w.frame), flipped: cv.isFlipped)
             return
         }
+        layer.cornerCurve = .card
         layer.cornerRadius = shell.paneCornerRadius
         // Frontend-docked: the window spans the card body, so both bottom corners are
         // card corners, and the top ones too without the toolbar (else they showed past the
