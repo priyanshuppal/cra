@@ -16,8 +16,7 @@ enum HitchMonitor {
 
     static func startIfRequested() {
         if background {
-            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical, .idleSystemSleepDisabled],
-                                                             reason: "Background test instance")
+            holdActivity(true)
             reportWindowsVisible()
         }
         guard let path = ProcessInfo.processInfo.environment["CRA_HITCH_LOG"], !path.isEmpty else { return }
@@ -38,6 +37,18 @@ enum HitchMonitor {
         thread.name = "HitchMonitor"
         thread.qualityOfService = .userInteractive
         thread.start()
+    }
+
+    /// The activity that keeps App Nap and timer coalescing off; `cra://debug?appNap=allow` ends it.
+    static func holdActivity(_ hold: Bool) {
+        if hold, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical, .idleSystemSleepDisabled],
+                                                             reason: "Background test instance")
+        } else if !hold, let a = activity {
+            ProcessInfo.processInfo.endActivity(a)
+            activity = nil
+        }
+        CraLog.note("appNap: \(hold ? "held off" : "allowed")")
     }
 
     private typealias OcclusionIMP = @convention(c) (AnyObject, Selector) -> UInt

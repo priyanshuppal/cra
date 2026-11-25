@@ -2905,6 +2905,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
             // Tab freezing with a short threshold (seconds) from now on, so it can be tried without
             // waiting: the minute's pass would otherwise take the votes back.
+            // appNap=allow: a CRA_TEST_BACKGROUND copy gives up its no-App-Nap activity, so its idle
+            // wakeups are those of a backgrounded user's Cra (scripts/perf/bench.sh); hold takes it again.
+            if let v = dict["appNap"] { HitchMonitor.holdActivity(v != "allow"); return }
             if dict["freezingState"] != nil { for w in mainWindows { w.browsers.logFreezingStates() }; return }
             if let s = dict["freezeTabs"].flatMap(Double.init) {
                 freezeAfter = s
@@ -3768,26 +3771,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// Testing aid: with CRA_COMMAND_FILE set, every line appended to that file
     /// is handled like a cra:// URL (a second instance run with CRA_DATA_DIR
     /// cannot receive cra:// URLs, which LaunchServices routes to the installed app).
-    private var commandFileOffset: UInt64 = 0
-    private var commandFilePoll: ScheduledWork?
+    private var commandFile: CommandFileReader?
     private func installCommandFileWatcher() {
         guard let path = ProcessInfo.processInfo.environment["CRA_COMMAND_FILE"], !path.isEmpty else { return }
         FileManager.default.createFile(atPath: path, contents: nil)
-        commandFileOffset = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
         // A script writes only after this line: the file above starts empty.
         CraLog.note("pid \(getpid()) reads commands from CRA_COMMAND_FILE")
-        commandFilePoll = composition.clock.every(0.15) { [weak self] in
-            guard let self, let h = FileHandle(forReadingAtPath: path) else { return }
-            defer { try? h.close() }
-            let size = (try? h.seekToEnd()) ?? 0
-            guard size > self.commandFileOffset else { return }
-            try? h.seek(toOffset: self.commandFileOffset)
-            let data = h.readDataToEndOfFile()
-            self.commandFileOffset = size
-            for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
-                HitchMonitor.mark(String(line))
-                if let u = URL(string: line.trimmingCharacters(in: .whitespaces)) { self.handleInternalURL(u) }
-            }
+        commandFile = CommandFileReader(path: path, clock: composition.clock) { [weak self] line in
+            HitchMonitor.mark(line)
+            if let u = URL(string: line.trimmingCharacters(in: .whitespaces)) { self?.handleInternalURL(u) }
         }
     }
 

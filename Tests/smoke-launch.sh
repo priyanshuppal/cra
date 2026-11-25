@@ -90,7 +90,7 @@ PY
   echo "cra://action/toggleToolbar" >> "$TEST_DIR/commands"
   sleep 0.3
   if [ "$n" = 2 ]; then
-    # Both commands run in the same poll, before the 300 ms frame debounce.
+    # Both commands arrive in one read, before the 300 ms frame debounce.
     local resized
     resized=$(python3 - "$TEST_DIR/expected-$n.json" <<'PY'
 import json, re, sys
