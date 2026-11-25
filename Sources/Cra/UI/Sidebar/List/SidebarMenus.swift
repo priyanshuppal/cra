@@ -66,6 +66,19 @@ enum SidebarMenus {
         }
     }
 
+    /// Share Split View… on a split's panes (#600), from its sidebar row or a pane's Split View menu: nil
+    /// when no pane has a link. Arc stores the split on arc.net; Cra's link carries the panes after its #,
+    /// as Share Folder… does.
+    static func shareSplit(_ panes: [UUID], store: SidebarStore, actions: SidebarActions, window: NSWindow?) -> (() -> Void)? {
+        guard let link = FolderShareLink.url(for: FolderShareLink.picked(panes.compactMap(store.item))) else { return nil }
+        return {
+            confirmShare(over: window, kind: "Split View") {
+                copy(link)
+                actions.showToast("Copied Folder URL")
+            }
+        }
+    }
+
     // MARK: Tab groups
 
     /// Arc's Tab Group Context Menu: one item, "Remove header" (the tabs stay, loose).
@@ -479,15 +492,8 @@ enum SidebarMenus {
         let menu = menu()
         leading(menu)
         let children = panes.map(\.id)
-        // Arc stores the split on arc.net; Cra's link carries the panes after its #, as Share Folder… does.
-        let link = FolderShareLink.url(for: FolderShareLink.picked(children.compactMap(store.item)))
-        add(menu, "Share Split View…", enabled: link != nil) {
-            guard let link else { return }
-            confirmShare(over: window, kind: "Split View") {
-                copy(link)
-                actions.showToast("Copied Folder URL")
-            }
-        }
+        let share = shareSplit(children, store: store, actions: actions, window: window)
+        add(menu, "Share Split View…", enabled: share != nil) { share?() }
         menu.addItem(.separator())
         add(menu, "Separate All Tabs") { store.separateAll(id) }
         // Arc greys it out while the split is closed (no pane to add next to).

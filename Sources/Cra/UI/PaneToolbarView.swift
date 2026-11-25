@@ -663,23 +663,51 @@ final class PaneToolbarView: NSView {
     }
 
     private func showSplitMenu(from view: NSView?) {
-        guard let id = paneTabID, let view else { return }
-        // A hovered pane's options act on that pane: Copy Link and Flip read the focused one.
-        actions.focusPane(id)
-        let menu = NSMenu()
-        let items: [(String, String, () -> Void)?] = [
-            ("Separate Tab from Split", "separateFromSplit", { [weak self] in self?.actions.separatePane(id) }),
-            ("Flip Split View Orientation", "flipSplitOrientation", { [weak self] in self?.actions.performAction("flipSplitOrientation") }),
-            nil,
-            ("Copy Link", "copyURL", { [weak self] in self?.actions.performAction("copyURL") }),
-            nil,
-            ("Close this Split Pane", "closeSplitPane", { [weak self] in self?.actions.closePane(id) }),
-        ]
-        for entry in items {
-            guard let (title, shortcut, run) = entry else { menu.addItem(.separator()); continue }
-            menu.addItem(ToolbarMenuAction.item(title, shortcut: shortcut, run))
-        }
+        guard let view, let menu = splitMenu() else { return }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 4), in: view)
+    }
+
+    /// The pane's Split View menu, rows from SplitPaneMenu (Arc's SplitViewPaneMenuOperation). Opening it
+    /// focuses the pane: Copy Link and Convert act on the focused one, as the rest act on this one.
+    func splitMenu() -> NSMenu? {
+        guard let id = paneTabID, let split = store.splitContaining(id), let pane = store.paneID(for: id, in: split),
+              let index = split.children.firstIndex(of: pane) else { return nil }
+        actions.focusPane(id)
+        let orientation = split.split?.orientation ?? .horizontal
+        let share = SidebarMenus.shareSplit(split.children, store: store, actions: actions, window: window)
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for row in SplitPaneMenu.rows(index: index, count: split.children.count, orientation: orientation, limit: store.splitPaneLimit) {
+            if row.op.startsGroup { menu.addItem(.separator()) }
+            let item: NSMenuItem
+            switch row.op {
+            case .moveLeft, .moveRight:
+                item = ToolbarMenuAction.item(row.op.title(orientation)) { [weak self] in
+                    guard let self, let to = SplitPaneMenu.moveTarget(row.op, from: index) else { return }
+                    self.store.moveWithinSplit(split.id, tabID: pane, to: to)
+                }
+            case .addPaneRight, .addPaneLeft, .addPaneBottom, .addPaneTop:
+                let after = row.op.addsAfter ?? true
+                item = ToolbarMenuAction.item(row.op.title(orientation), shortcut: after ? "addSplitView" : nil) { [weak self] in
+                    self?.actions.addPane(id, after)
+                }
+            case .separate:
+                item = ToolbarMenuAction.item(row.op.title(orientation), shortcut: "separateFromSplit") { [weak self] in self?.actions.separatePane(id) }
+            case .flipLayoutOrientation:
+                item = ToolbarMenuAction.item(row.op.title(orientation), shortcut: "flipSplitOrientation") { [weak self] in
+                    self?.actions.performAction("flipSplitOrientation")
+                }
+            case .share:
+                item = ToolbarMenuAction.item(row.op.title(orientation)) { share?() }
+            case .copyLink:
+                item = ToolbarMenuAction.item(row.op.title(orientation), shortcut: "copyURL") { [weak self] in self?.actions.performAction("copyURL") }
+            case .close:
+                item = ToolbarMenuAction.item(row.op.title(orientation), shortcut: "closeSplitPane") { [weak self] in self?.actions.closePane(id) }
+            }
+            item.isEnabled = row.enabled && (row.op != .share || share != nil)
+            menu.addItem(item)
+        }
+        return menu
     }
 
     // Arc 1.170 opens the command bar from the address only (ToolbarURLButton) or the no-tab

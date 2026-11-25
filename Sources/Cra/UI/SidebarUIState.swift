@@ -269,6 +269,9 @@ final class SidebarActions {
     var focusPane: (UUID) -> Void = { _ in }
     /// Split view: close one pane (Arc: "Close this Split Pane").
     var closePane: (UUID) -> Void = { _ in }
+    /// Split view: an empty pane before or after (`true`) this one, with the command bar to fill it
+    /// (Arc's pane menu: Add Right/Left/Bottom/Top Split).
+    var addPane: (UUID, Bool) -> Void = { _, _ in }
     /// Split view: move a pane out into its own tab (Arc: "Separate Tab from Split").
     var separatePane: (UUID) -> Void = { _ in }
     /// Split view: pane-level navigation (goBack/goForward/reload by tab).
