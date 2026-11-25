@@ -30,4 +30,13 @@ struct SidebarMotionTests {
         #expect(SidebarMotion.progress(at: 5.0 / 60) > 0.97)
         #expect(SidebarMotion.progress(at: 1) > 1 - 1e-9)
     }
+
+    /// The bisection lands a hair inside [0, 1]; a fade that starts at 0.99999 isn't opaque.
+    @Test(arguments: [(0.3, 0.7, 0.5, 1.0), (0.2, 0.9, 0.25, 1.0)])
+    func startsAndEndsExactly(curve: (Double, Double, Double, Double)) {
+        #expect(SidebarMotion.progress(at: 0, curve: curve, duration: 0.06) == 0)
+        #expect(SidebarMotion.progress(at: -1, curve: curve, duration: 0.06) == 0)
+        #expect(SidebarMotion.progress(at: 0.06, curve: curve, duration: 0.06) == 1)
+        #expect(SidebarMotion.progress(at: 1, curve: curve, duration: 0.06) == 1)
+    }
 }
