@@ -5503,3 +5503,47 @@ ignore a press with no hover before it), read off full-screen 2x captures with t
 - **Cra:** `CloseSuccessor.pinnedClose(isFavorite:fromItsMenu:)`. The menu's Close Tab unloads the Favorite back to its
   pinned page, whether it is shown or loaded behind another tab; ⌘W and every other close still only deselect it.
 - **Open questions:** Arc's Favorite split menu, and whether ⇧⌘T brings a Favorite closed this way back.
+
+## Arc's spring presets (Arc 1.174.3, 26 Nov 2026, static: Swift metadata and disassembly)
+
+- **Where:** `ARCUI.SpringAnimationStyle` is in Arc's main binary (ARCUI isn't a framework). In the arm64 slice
+  (`lipo -thin arm64`; addresses are VM addresses, file offset = address − 0x100000000) its type descriptor is
+  0x103d7494c (enum, parent module ARCUI, 7 empty cases) and its field descriptor 0x103ea9280 lists the cases
+  in order: firm, firmSlow, firmExtraSlow, firmFast, springy, springyFast, springyExtraFast. A nested struct
+  `SpringAnimationStyle.Properties` (descriptor 0x103d74968) holds `dampingRatio` and `frequencyResponse`.
+- **The numbers** are two tables of seven doubles in `__TEXT,__const`, right after the "SpringAnimationStyle"
+  string, indexed by the case (`ubfiz x8, x0, #3, #8; ldr dN, [table, x8]`):
+
+  | Case | response (s) | address | damping ratio | address | stiffness | damping |
+  |---|---|---|---|---|---|---|
+  | firm | 0.25 | 0x103725f98 | 0.9 | 0x103725fd0 | 631.65 | 45.24 |
+  | firmSlow | 0.35 | 0x103725fa0 | 0.9 | 0x103725fd8 | 322.27 | 32.31 |
+  | firmExtraSlow | 1.25 | 0x103725fa8 | 0.9 | 0x103725fe0 | 25.27 | 9.05 |
+  | firmFast | 0.15 | 0x103725fb0 | 0.95 | 0x103725fe8 | 1754.6 | 79.59 |
+  | springy | 0.28 | 0x103725fb8 | 0.63 | 0x103725ff0 | 503.55 | 28.27 |
+  | springyFast | 0.18 | 0x103725fc0 | 0.8 | 0x103725ff8 | 1218.47 | 55.85 |
+  | springyExtraFast | 0.08 | 0x103725fc8 | 0.8 | 0x103726000 | 6168.5 | 125.66 |
+
+- **Which table is which:** 0x100a12870 (`properties`) returns `Properties(dampingRatio: [0x…fd0], frequencyResponse:
+  [0x…f98])` in d0/d1, in the field order of the struct's descriptor. 0x100a12890 loads `[0x…f98]` into d0 and
+  `[0x…fd0]` into d1 and tail-calls `SwiftUI.Animation.spring(response:dampingFraction:blendDuration:)`.
+  0x100a1281c builds a `CASpringAnimation` from a style through 0x100a12730, ARCUI's
+  `CASpringAnimation(dampingRatio:frequencyResponse:)`: it traps unless ratio ≥ 0 and response > 0, then sets
+  stiffness = (2π / response)² · mass and damping = 4π · ratio · mass / response (constants 2π and 4π built with
+  `mov/movk` at 0x100a1276c and 0x100a127a0). Cra's `PeekControlLook.Spring` uses the same conversion.
+- **Callers:** the tables are read only inside ARCUI's helpers (0x100a1281c–0x100a12c84). Other modules pass the
+  pair inline, so a caller shows the numbers, not the case. Pairs that equal a preset: `CASpringAnimation` near
+  `EaselUI.ModalImageEditorContentViewController` (firm at 0x101ce251c, firmFast at 0x101ce3764…) and
+  `BaseHomeComponents.MediaPreviewRootViewController` (firm 0x102661d4c, firmFast 0x10266225c), springy in the
+  Arc module (0x1002f4eb8, 0x100426504, 0x10042698c); SwiftUI `.spring` with firmFast near `SidebarBanner`
+  (0x102617974…), springyFast near `HomeBadging` (0x102744234…), firmExtraSlow in `AuthFeature` (0x10184d998…).
+  Cra's Peek buttons (`PeekControlLook`, read earlier from `ModalButtonStyle`) are firmFast (hover) and springy
+  (press) exactly. Owners are the nearest Swift vtable entries, not symbols, so they're [I].
+- **Not presets:** the controls Cra has ad-hoc springs for use their own pairs. The toast's only spring, next to
+  the `Toasts/ShinyToastView.swift` references, is `.spring(response: 0.4, dampingFraction: 0.7)` (0x1019024c0);
+  Picture in Picture's three are 0.25 / 0.7 (0x1025315d8, 0x1025446c0, 0x102545664); DownloadsUI's
+  `CASpringAnimation`s are ratio 0.5 / response 0.4 (0x101d1ed90, 0x101d1ef64, 0x101d1f0c8), 0.5 / 0.2
+  (0x101d23e20) and 0.6 / 0.4 (0x101d264b0, 0x101d265fc). [U] Which of those is the download badge, and whether the
+  toast's 0.4 / 0.7 is its entrance (the recording above fitted ≈0.3 s, 0.67). Cra's springs are unchanged.
+- **Cra:** `ArcSpring` (CraCore), `ArcSpringTests`. Scratch scripts that read the tables and callers:
+  `/tmp/cra-arc-springs/py/` (desc.py, xref.py, callers.py, vt.py).
