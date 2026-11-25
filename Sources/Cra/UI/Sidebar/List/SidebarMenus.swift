@@ -277,34 +277,54 @@ enum SidebarMenus {
         }
     }
 
+    /// The folder's menu in Arc 1.174's order (FolderMenu). Arc's Turn "…" into Space and Duplicate
+    /// aren't in Cra yet.
     static func folder(_ item: SidebarItem, list: SpaceListView) -> NSMenu {
         let store = list.store, ui = list.ui
         let id = item.id
         let menu = menu()
-        add(menu, "Change Icon…") { list.showFolderIconPicker(id) }
-        add(menu, "Rename…") { ui.renamingID = id }
-        add(menu, "New Folder Inside") {
-            let f = store.createFolder(named: "New Folder", in: id, index: 0)
-            store.setExpanded(id, true)
-            ui.renamingID = f.id
-        }
-        iconColor(menu, item, list: list)
-        menu.addItem(.separator())
         // Arc's Share Folder… copied an arc.net link ("Copied Folder URL"); Cra's link carries the
         // folder after its #, so nothing is stored anywhere (FolderShareLink, #357).
         let link = FolderShareLink.url(for: FolderShareLink.folder(item) { store.children(of: $0) })
         let toast = list.actions.showToast
-        add(menu, "Share Folder…", enabled: link != nil) {
-            guard let link else { return }
-            confirmShare(over: list.window) {
-                copy(link)
-                toast("Copied Folder URL")
+        let tabs = store.tabs(under: id).compactMap { c in c.tab.map { (c, $0) } }
+        for (i, section) in FolderMenu.sections.enumerated() {
+            if i > 0 { menu.addItem(.separator()) }
+            for row in section {
+                let title = FolderMenu.title(row), enabled = FolderMenu.isEnabled(row, tabs: tabs.count, shareable: link != nil)
+                switch row {
+                case .share:
+                    add(menu, title, enabled: enabled) {
+                        guard let link else { return }
+                        confirmShare(over: list.window) {
+                            copy(link)
+                            toast("Copied Folder URL")
+                        }
+                    }
+                case .newNestedFolder:
+                    add(menu, title) {
+                        let f = store.createFolder(named: "New Folder", in: id, index: 0)
+                        store.setExpanded(id, true)
+                        ui.renamingID = f.id
+                    }
+                case .copyAllLinks:
+                    add(menu, title, enabled: enabled) { copy(FolderMenu.links(tabs.map { $0.1.liveItemURL ?? $0.1.url })) }
+                case .copyAllLinksAsMarkdown:
+                    add(menu, title, enabled: enabled) { copyMarkdownLinks(under: id, store: store) }
+                case .changeIcon: add(menu, title) { list.showFolderIconPicker(id) }
+                case .iconColor: iconColor(menu, item, list: list)
+                case .rename: add(menu, title) { ui.renamingID = id }
+                case .moveTo: moveToItems(menu, [id], list: list)
+                case .delete: add(menu, title) { store.deleteFolder(id) }
+                }
             }
         }
-        moveToItems(menu, [id], list: list)
-        menu.addItem(.separator())
-        add(menu, "Delete Folder (archives tabs)") { store.deleteFolder(id) }
         return menu
+    }
+
+    /// Copy All Links as Markdown, on a folder or a live folder: one `- [title](address)` per tab inside.
+    private static func copyMarkdownLinks(under id: UUID, store: SidebarStore) {
+        copy(FolderMenu.markdown(store.tabs(under: id).compactMap { c in c.tab.map { (c.displayTitle, $0.liveItemURL ?? $0.url) } }))
     }
 
     /// The live folder's menu (Arc: SidebarMenu+ListContextMenu liveFolderContextMenu).
@@ -365,10 +385,7 @@ enum SidebarMenus {
         menu.addItem(.separator())
         iconColor(menu, item, list: list)
         add(menu, "Rename…") { ui.renamingID = id }
-        add(menu, "Copy All Links as Markdown", enabled: !item.children.isEmpty) {
-            let lines = store.tabs(under: id).compactMap { c in c.tab.map { "- [\(c.displayTitle)](\($0.liveItemURL ?? $0.url))" } }
-            copy(lines.joined(separator: "\n"))
-        }
+        add(menu, FolderMenu.title(.copyAllLinksAsMarkdown), enabled: !item.children.isEmpty) { copyMarkdownLinks(under: id, store: store) }
         menu.addItem(.separator())
         let window = list.window
         add(menu, "Delete Live Folder") { confirmDeleteLiveFolder(item, store: store, in: window) }
