@@ -352,15 +352,12 @@ final class SpaceListView: NSView, NSDraggingSource {
             return d
         }
 
-        // The icons a row's model shows, key by key: a page reporting its icon rebuilds only the lists that show it.
+        // The icons a row's model shows (SidebarIconKeys), key by key: a page reporting its icon rebuilds only the
+        // lists that show it.
         var iconKeys: [String] = []
-        func watchIcons(_ item: SidebarItem, pinned: Bool) {
-            guard let tab = item.tab else { return }
-            for key in [tab.iconKey, pinned ? tab.customIconKey ?? FaviconKey.key(for: tab.savedURL) : nil, peekBadges[item.id]?.iconKey] {
-                guard let key else { continue }
-                favicons.observe(key)
-                iconKeys.append(key)
-            }
+        func watchIcons(_ keys: [String]) {
+            for key in keys { favicons.observe(key) }
+            iconKeys += keys
         }
 
         func add(_ item: SidebarItem, depth: Int, pinned: Bool, parent: UUID, index: Int, peeked: Bool = false) {
@@ -400,7 +397,7 @@ final class SpaceListView: NSView, NSDraggingSource {
                 row.pinned = pinned
                 row.peeked = peeked
                 row.selected = item.id == openTab
-                watchIcons(item, pinned: pinned)
+                if let tab = item.tab { watchIcons(SidebarIconKeys.tabRow(tab, pinned: pinned, peekBadge: peekBadges[item.id]?.iconKey)) }
                 out.append(row)
             } else if item.isSplit {
                 row.kind = .split
@@ -408,7 +405,7 @@ final class SpaceListView: NSView, NSDraggingSource {
                 // Its tabs are read here, so a change to one rebuilds the list.
                 let panes = store.children(of: item.id)
                 row.selected = panes.contains { $0.isTab && $0.id == openTab }
-                for pane in panes { watchIcons(pane, pinned: false) }
+                watchIcons(SidebarIconKeys.splitRow(panes: panes))
                 out.append(row)
             }
         }
@@ -448,7 +445,7 @@ final class SpaceListView: NSView, NSDraggingSource {
                     SiteIconLoader.shared.want(.init(url: tab.url, iconKey: tab.iconKey, visible: visible, incognito: incognito),
                                                into: self.favicons)
                 }
-                let (homeImg, homeFlip) = navigatedAway ? icon(tab.customIconKey ?? FaviconKey.key(for: tab.savedURL)) : (img, flip)
+                let (homeImg, homeFlip) = navigatedAway ? icon(SidebarIconKeys.home(tab)) : (img, flip)
                 let developerMode = store.settings.isDeveloperMode(url: tab.url)
                 // Tidy Tab Titles' rename: "Double-click to rename" under the new name for a few seconds.
                 let tidyRename = tidyEffects[item.id]
