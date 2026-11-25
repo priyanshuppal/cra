@@ -5,8 +5,9 @@ import AppKit
 /// to equal widths on a double-click.
 final class SplitDraggerHandleView: NSView {
     var orientation: SplitOrientation = .horizontal { didSet { needsLayout = true; window?.invalidateCursorRects(for: self) } }
-    /// Mouse moved by `delta` points along the main axis since the drag started.
-    var onDrag: ((CGFloat) -> Void)?
+    /// Mouse moved by `delta` points along the main axis since the drag started, and the
+    /// event's timestamp (seconds since boot, NSEvent.timestamp).
+    var onDrag: ((CGFloat, TimeInterval) -> Void)?
     var onDragBegan: (() -> Void)?
     var onDragEnded: (() -> Void)?
     var onDoubleClick: (() -> Void)?
@@ -106,7 +107,7 @@ final class SplitDraggerHandleView: NSView {
         let p = event.locationInWindow
         // Vertical layouts stack downwards; AppKit's y grows upwards.
         let delta = orientation == .horizontal ? p.x - start.x : start.y - p.y
-        onDrag?(delta)
+        onDrag?(delta, event.timestamp)
     }
 
     override func mouseUp(with event: NSEvent) {
