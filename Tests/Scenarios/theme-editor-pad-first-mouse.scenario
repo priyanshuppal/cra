@@ -1,0 +1,28 @@
+# promise: #754
+# The space style editor's colour pad takes its first press while the page has the keys: a real press on the pad,
+# through the window server (scripts/hid-click/click.m), dragged and let go, moves the colour, as Arc's does.
+# Reported as the knob not grabbing until a click first (GitHub #754, part C): the editor is a non-activating panel
+# beside the page, and its plain NSHostingView let that first press only make the panel key, so the pad's
+# DragGesture never saw it. The editor's view takes the first mouse now (FirstClickHostingView).
+requires screen
+env CRA_TEST_BACKGROUND=0
+budget rss=700 stalls50=10
+pace 0.5
+cra://open?url=${PAGE}?n=theme-pad
+wait 2
+cra://debug?mainFrame=100,100,1000,700
+wait 1
+cra://debug?activate=1
+wait 1
+# A real click on the page makes Cra the active app with the page holding the keys, as the reporter's was.
+click page-top
+wait 1
+cra://debug?themeEditor=1
+wait 1
+# The browser window takes the keys back without a click (a click outside the editor closes it).
+cra://debug?activate=1
+wait 1
+click theme-pad drag
+expect-log theme pad key: no
+expect-log theme editor pad dragged: key=#[0-9A-F]{6}
+cra://dismiss

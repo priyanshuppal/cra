@@ -2974,6 +2974,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
                 return
             }
+            // themePad=point (#754): where scenario.sh's `click theme-pad` presses, a quarter of the way across the open
+            // style editor's colour pad, half way down, clear of its toggles and buttons: "theme pad key: <yes|no>",
+            // whether the editor has the keys, then "theme pad point: <x> <y>", top-left screen points.
+            if dict["themePad"] == "point" {
+                guard let panel = main.window?.childWindows?.first(where: { $0 is StyleEditorPanel }), let host = panel.contentView,
+                      let pad = SpaceStyleTick.padFrame, let top = NSScreen.screens.first?.frame.maxY else {
+                    CraLog.note("theme pad point: none"); return
+                }
+                // SwiftUI's frame is from the content view's top left; the window's points are from its bottom left.
+                let onScreen = panel.convertPoint(toScreen: NSPoint(x: pad.minX + pad.width / 4, y: host.frame.height - pad.midY))
+                CraLog.note("theme pad key: \(panel.isKeyWindow ? "yes" : "no")")
+                CraLog.note("theme pad point: \(Int(onScreen.x)) \(Int(top - onScreen.y))")
+                return
+            }
             if dict["jumpPill"] != nil { SpaceListView.jumpToSelected(for: main.sidebarUI, space: store.focusedSpaceID); return }
             // The open folder preview: the pointer resting on a row, the list scrolled under it, and
             // "Cra folderPreview <label>: lit=<rows> top=<pt>", the rows with the pointer's highlight and how far

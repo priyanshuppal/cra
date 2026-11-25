@@ -4331,7 +4331,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         // Arc's panel stands against the sidebar's edge with the row about half way down it.
         let y = min(max(row.midY - size.height / 2, window.frame.minY), window.frame.maxY - size.height)
         let panel = StyleEditorPanel(contentRect: NSRect(x: row.maxX.rounded() + 2, y: y.rounded(), width: size.width, height: size.height)) {}
-        let host = NSHostingView(rootView: editor.shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        // The page or the window keeps the keys: the first press on the pad must grab its knob (#754).
+        let host = FirstClickHostingView(rootView: editor.shadow(color: .black.opacity(0.3), radius: 10, y: 4)
             .padding(.top, 12).padding(.horizontal, 13.5).padding(.bottom, 19))
         host.sizingOptions = []
         panel.contentView = host

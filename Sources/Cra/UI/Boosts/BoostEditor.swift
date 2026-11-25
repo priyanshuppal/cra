@@ -680,8 +680,10 @@ private final class BoostEditorPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
-/// The editor sits beside the page, which keeps the keyboard: its first click acts, as Arc's does.
-private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+/// A SwiftUI panel beside the page, which keeps the keyboard: its first click acts, as Arc's does.
+/// The Boost editor, and the space style editor, whose colour pad took a click before a knob could
+/// be dragged (#754).
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
