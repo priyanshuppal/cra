@@ -11,7 +11,10 @@ struct SpacePalette {
     let textSecondary: Color
     let textTertiary: Color
     let hoverFill: Color
+    /// The open tab's row (SidebarTones.selected, Arc's TabCellBackgroundCurrent).
     let selectedFill: Color
+    /// A tab picked with ⌘- or ⇧-click that isn't the open one (SidebarTones.multiSelected).
+    let pickedFill: Color
     let separator: Color
     /// The sidebar URL pill and a favorite tile at rest; both take `pillHoverFill` under the pointer.
     let pillFill: Color
@@ -150,7 +153,8 @@ extension SpaceTheme {
             textTertiary: dark ? .white.opacity(0.38) : .black.opacity(0.38),
             // Arc 1.170 live: a hovered row darkens ~4.5% (220/210/171 → 210/200/163), it does not lighten.
             hoverFill: dark ? .white.opacity(0.07) : .black.opacity(0.045),
-            selectedFill: dark ? .white.opacity(0.13) : .white.opacity(0.74),
+            selectedFill: Color(SidebarTones.selected(dark: dark)),
+            pickedFill: Color(SidebarTones.multiSelected(dark: dark)),
             separator: dark ? .white.opacity(0.12) : .black.opacity(0.09),
             pillFill: Color(SidebarTones.pill(dark: dark)),
             pillHoverFill: Color(SidebarTones.pillHover(dark: dark)),

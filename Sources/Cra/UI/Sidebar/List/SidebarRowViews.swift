@@ -14,6 +14,7 @@ struct SidebarColors: Equatable {
     var textTertiary = NSColor.tertiaryLabelColor
     var hoverFill = NSColor.clear
     var selectedFill = NSColor.clear
+    var pickedFill = NSColor.clear
     var separator = NSColor.separatorColor
     var pillFill = NSColor.clear
     var pillHoverFill = NSColor.clear
@@ -28,6 +29,7 @@ struct SidebarColors: Equatable {
         textTertiary = NSColor(p.textTertiary)
         hoverFill = NSColor(p.hoverFill)
         selectedFill = NSColor(p.selectedFill)
+        pickedFill = NSColor(p.pickedFill)
         separator = NSColor(p.separator)
         pillFill = NSColor(p.pillFill)
         pillHoverFill = NSColor(p.pillHoverFill)
@@ -659,11 +661,11 @@ class SidebarRowView: NSView {
         layer.add(spring, forKey: "bounce")
     }
 
-    /// The open row's soft shadow under its fill, on light themes only.
+    /// The open row's shadow under its fill: Arc's TabCellShadowSelected, on light themes only (SidebarTones).
     func setLifted(_ selected: Bool) {
-        let lifted = selected && !colors.isDark && decor.combine == nil
-        layer?.shadowOpacity = lifted ? 0.06 : 0
-        if lifted {
+        let opacity = selected && decor.combine == nil ? SidebarTones.selectedShadow(dark: colors.isDark) : nil
+        layer?.shadowOpacity = Float(opacity ?? 0)
+        if opacity != nil {
             layer?.shadowColor = NSColor.black.cgColor
             layer?.shadowRadius = 3
             layer?.shadowOffset = CGSize(width: 0, height: -1)
@@ -829,7 +831,8 @@ struct TabRowModel: Equatable {
     var liveIcon: NSImage?
     var editing: Bool
     var selected: Bool
-    var highlighted: Bool
+    /// The open tab's fill, a pick's, or none (CraCore TabRowHighlight).
+    var highlight: TabRowHighlight
     var capturing: Bool
     /// A call shares the tab (TabSharing): Arc's yellow ring on the row.
     var shared: Bool = false
@@ -853,6 +856,9 @@ struct TabRowModel: Equatable {
     var peekIcon: NSImage?
     /// Tidy Tab Titles just renamed it: the row plays Arc's rename once.
     var tidyRename: TidyTitlesService.Effect? = nil
+
+    /// Filled, as the open tab or a pick.
+    var highlighted: Bool { highlight.filled }
 }
 
 final class TabRowView: SidebarRowView, ArcTooltipTarget, NSTextFieldDelegate {
@@ -1071,15 +1077,28 @@ final class TabRowView: SidebarRowView, ArcTooltipTarget, NSTextFieldDelegate {
 
     override func baseFill() -> NSColor {
         guard let m = model else { return .clear }
-        if m.highlighted { return colors.selectedFill }
+        switch m.highlight {
+        case .current: return colors.selectedFill
+        case .picked: return colors.pickedFill
+        case .none: break
+        }
         // A tab that can go back fills only the hovered region (regionLayer), as Arc does.
         return isHovered && !canReset ? colors.hoverFill : .clear
     }
 
     override func refreshBackground() {
         super.refreshBackground()
-        setLifted(model?.highlighted == true)
+        setLifted(model?.highlight.lifted == true)
         refreshRegion()
+    }
+
+    /// cra://debug?tabRows: the palette slot the row is filled with now and whether it casts the open tab's
+    /// shadow, "fill=<selected|picked|hover|clear|other> lifted=<0|1>".
+    var debugLook: String {
+        let fill = baseFill()
+        let f = fill == colors.selectedFill ? "selected" : fill == colors.pickedFill ? "picked"
+            : fill == colors.hoverFill ? "hover" : fill == .clear ? "clear" : "other"
+        return "fill=\(f) lifted=\((layer?.shadowOpacity ?? 0) > 0 ? 1 : 0)"
     }
 
     override func hoverChanged() {

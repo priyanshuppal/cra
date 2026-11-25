@@ -4860,6 +4860,22 @@ ScreenCaptureKit region recorder that also drives the pointer and logs each move
   196/182/146 over 206/192/153), white 0.095 on the dark one (58/58/75 over 37/37/55). Hovered, both take one
   fill: black 0.09 (183/175/141, 185/175/141 over 202/192/155) and white 0.145 (69/69/85). Cra's pill went to
   `selectedFill` (white 0.74 on light themes, 243/240/231) and its dark tiles to white 0.15.
+- [O assets] Arc 1.174.3, 26 Nov 2026: the tab cell's colours, from
+  `Contents/Resources/ARCClients_BaseAssets.bundle/Contents/Resources/Assets.car` (`assetutil --info`; light is the
+  any-appearance entry, dark `NSAppearanceNameDarkAqua`). Dark whites are Display P3 (0.98, 0.984, 1); Cra draws white.
+  - TabCellBackgroundCurrent, the open tab: sRGB white 0.85 light, P3 white 0.20 dark. Cra had 0.74 and 0.13.
+  - TabCellShadowSelected: sRGB black 0.20 light, clear on dark. Cra had black 0.06. The radius and offset aren't
+    assets; Cra keeps 3 pt, 1 pt down.
+  - TabCellBackgroundMutiselected (sic), a ⌘/⇧-picked tab: sRGB black 0.10 light, P3 white 0.10 dark, with no
+    shadow asset of its own. Cra drew every pick as the open tab; the open tab among the picks keeps its own look
+    (`isCurrentItem` and `isMultiSelected` are separate fields of the cell's state).
+  - The same file's SidebarItemBackground (P3 near-black 0.05 light, white 0.10 dark) and
+    SidebarItemHoveredBackground (0.10 / 0.15) agree with the pill and tile fills measured live above, within
+    half a percent, so the catalogue is a fair source for the rest.
+  - Also there, not used yet: TabCellBackgroundPressed (0.065 both), Previous (white 0.32 / 0.08), PreviousHovered
+    (0.50 / 0.12), ContentVisible (white 0.70 / 0.15), TabCellChildBackground (black / white 0.07).
+  Cra: SidebarTones.selected, selectedShadow, multiSelected and TabRowHighlight;
+  Tests/Scenarios/picked-tabs-tone.scenario reads the rows with `cra://debug?tabRows=`.
 - [O 1x] Space header title: black 0.46 over a light theme (113/102/83 over 208/190/154), white 0.45 over a dark
   one (135/136/146 over 37/37/55); rows are the theme's full ink. Cra had black 0.5 (99/94/76).
 - [O 120 fps] Hidden sidebar, reveal: the sidebar starts ~145 ms after the pointer reaches the edge gliding in and
