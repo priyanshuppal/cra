@@ -164,6 +164,7 @@ final class PageSplitDrop: PageDropTarget {
     /// The region for a new pane, or the ring on the pane a drop would replace.
     private func show(_ target: SplitDropProposal.Target) {
         guard target != current, let shell = owner?.shell else { return }
+        tick(from: current, to: target)
         current = target
         shell.setDropPreview(target.insert)
         if case .replace(let index) = target {
@@ -172,6 +173,13 @@ final class PageSplitDrop: PageDropTarget {
         } else {
             shell.dropReplaceID = nil
         }
+    }
+
+    /// Arc's tick as the drag starts offering a drop, or changes kind, under the same setting as
+    /// the sidebar's drag ticks.
+    private func tick(from old: SplitDropProposal.Target?, to new: SplitDropProposal.Target?) {
+        guard SplitDropProposal.ticks(from: old, to: new), owner?.store.settings.hapticFeedbackOnReorder == true else { return }
+        Haptics.play(.generic)
     }
 
     static func describe(_ t: SplitDropProposal.Target) -> String {
@@ -215,6 +223,7 @@ final class PageSplitDrop: PageDropTarget {
                                                                     area: layout.area, region: nil, current: nil, sidebarSide: owner.sidebarDocked, sidebarOn: shell.sidebarSide, link: payload.isLink,
                                                                     paneLimit: store.splitPaneLimit)
         guard let proposal else { CraLog.note("dropSplit: none"); return }
+        tick(from: current, to: proposal)
         switch proposal {
         case .insert(let insert):
             shell.setDropPreview(insert, animated: false)

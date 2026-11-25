@@ -36,6 +36,17 @@ public enum SplitDropProposal {
         public var insert: Insert? { if case .insert(let i) = self { i } else { nil } }
     }
 
+    /// Arc's tick under a drag over the panes (a generic haptic, now, from SplitViewController's
+    /// dropHapticSubject when isDragDropHapticFeedbackEnabled, Arc 1.174.3): as a drop region or a
+    /// pane's ring first shows, and as the drop turns from a new pane to a pane's place or back.
+    /// Moving between slots of the same kind, or the region going away, is silent.
+    public static func ticks(from old: Target?, to new: Target?) -> Bool {
+        switch (old, new) {
+        case (nil, _?), (.insert?, .replace?), (.replace?, .insert?): true
+        default: false
+        }
+    }
+
     /// In a split, how far in from a pane's side its edge reaches, as a share of its length:
     /// Arc opened the region 20 pt from a pane's side and replaced the pane a quarter in (145 pt
     /// of 578); a fifth splits it.

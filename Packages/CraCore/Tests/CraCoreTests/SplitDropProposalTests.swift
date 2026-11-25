@@ -118,4 +118,20 @@ import Testing
         let past = SplitDropProposal.panes([.init(id: Self.a, factor: 1)], inserting: r, at: Insert(index: 7, orientation: .horizontal))
         #expect(past.map(\.id) == [Self.a, r])
     }
+
+    /// The drag ticks as it starts offering a drop and as the drop changes kind, not for every slot.
+    @Test(arguments: [
+        (nil, h(1), true),
+        (nil, Target.replace(index: 0), true),
+        (h(1), Target.replace(index: 1), true),
+        (Target.replace(index: 1), h(2), true),
+        (h(1), h(2), false),
+        (h(1), Target.insert(Insert(index: 1, orientation: .vertical)), false),
+        (Target.replace(index: 0), Target.replace(index: 1), false),
+        (h(1), nil, false),
+        (nil, nil, false),
+    ] as [(Target?, Target?, Bool)])
+    func ticksAsADropOpensOrChangesKind(old: Target?, new: Target?, ticks: Bool) {
+        #expect(SplitDropProposal.ticks(from: old, to: new) == ticks)
+    }
 }
