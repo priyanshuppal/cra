@@ -1,0 +1,37 @@
+# VoiceOver hears more than a sidebar row's title: the open tab reads "selected", a muted one "muted", and a
+# folder whether it is open (CraCore SidebarRowAccessibility). Before, the rows gave only their titles.
+budget rss=600 stalls50=10
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false}
+cra://open?url=${PAGE}?n=alpha
+expect-log loaded 127\.0\.0\.1
+cra://open?url=${PAGE}?n=bravo
+expect-log loaded 127\.0\.0\.1
+wait 2
+cra://debug?sidebarAX=alpha
+expect-log sidebar ax alpha: label=Fixture alpha value= selected=false
+cra://debug?sidebarAX=bravo
+expect-log sidebar ax bravo: label=Fixture bravo value=selected selected=true
+# The selected tab muted.
+cra://action/muteTab
+wait 1
+cra://debug?sidebarAX=bravo
+expect-log sidebar ax bravo: label=Fixture bravo value=selected, muted selected=true
+# Another tab selected: the first one reads it, the muted one keeps "muted" alone.
+cra://debug?selectTab=n=alpha
+wait 1
+cra://debug?sidebarAX=alpha
+expect-log sidebar ax alpha: label=Fixture alpha value=selected selected=true
+cra://debug?sidebarAX=bravo
+expect-log sidebar ax bravo: label=Fixture bravo value=muted selected=false
+# A folder reads open, then closed, then open again.
+cra://action/newFolder
+wait 1
+cra://action/collapseAllFolders
+wait 1
+cra://debug?sidebarAX=New%20Folder
+expect-log sidebar ax New Folder: label=New Folder .*expanded=false
+cra://action/expandAllFolders
+wait 1
+cra://debug?sidebarAX=New%20Folder
+expect-log sidebar ax New Folder: label=New Folder .*expanded=true
+reject-log fault:

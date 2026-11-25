@@ -929,6 +929,21 @@ final class SpaceListView: NSView, NSDraggingSource {
         return nil
     }
 
+    /// Scenarios (cra://debug?sidebarAX=<match>): the row for an item whose id is `match`, whose tab's address holds
+    /// it, or whose title is it, as VoiceOver reads it; nil when no shown row matches.
+    static func debugRowAccessibility(_ match: String, ui: SidebarUIState) -> String? {
+        for l in all.allObjects where l.ui === ui {
+            for (key, row) in l.views {
+                guard case .item(let id) = key, row.isAccessibilityElement() else { continue }
+                let url = l.store.item(id)?.tab?.url
+                guard id.uuidString == match || url?.contains(match) == true || row.accessibilityLabel() == match else { continue }
+                return "label=\(row.accessibilityLabel() ?? "-") value=\(row.accessibilityValue() as? String ?? "-") "
+                    + "selected=\(row.isAccessibilitySelected()) expanded=\(row.isAccessibilityExpanded())"
+            }
+        }
+        return nil
+    }
+
     /// Tests without the pointer (cra://debug?folderPreview=<id>): the folder's preview as if hovered.
     static func debugFolderPreview(_ folderID: UUID, ui: SidebarUIState) {
         for l in all.allObjects where l.ui === ui {

@@ -4709,6 +4709,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
 
     /// cra://debug?commandBarIcon (#755): the open bar's n-th row's favicon.
     func debugCommandBarIcon(_ i: Int) -> String { commandHost?.debugRowIcon(i) ?? "none" }
+    /// cra://debug?commandBarAX: the open bar's n-th row as VoiceOver reads it.
+    func debugCommandBarAccessibility(_ i: Int) -> String { commandHost?.debugRowAccessibility(i) ?? "none" }
     /// cra://debug?commandBarDelete (#779): the open bar's n-th row's ✕, in screen points; nil when it shows none.
     func debugCommandBarDeletePoint(_ i: Int) -> NSPoint? { commandPanel.isVisible ? commandHost?.debugDeletePoint(i) : nil }
     /// cra://debug?commandBarRowPoint: the open bar's n-th row's centre, in screen points; nil when it isn't shown.

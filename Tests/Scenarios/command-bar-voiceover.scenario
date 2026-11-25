@@ -1,0 +1,27 @@
+# VoiceOver reads ⌘T's rows: each row is one element with a label ("Fixture a, 127.0.0.1:…/page.html?n=a,
+# Switch to Tab, 2 of 4", CraCore CommandBarSpeech) and says which is selected. ↓ moves the selection to row 1
+# and the bar announces it, since the field keeps the focus. Before, the rows had no accessibility and ↓ read
+# only the field's text.
+budget rss=600 stalls50=10
+seed settings.json {"hasSeenImportPrompt": true, "toolbarDefaultMigrated": true, "showToolbar": false}
+cra://open?url=${PAGE}?n=alpha
+expect-log loaded 127\.0\.0\.1
+cra://open?url=${PAGE}?n=bravo
+expect-log loaded 127\.0\.0\.1
+cra://open?url=${PAGE}?n=last
+wait 3
+cra://commandbar?query=fixture
+wait 1
+cra://debug?commandBarAX=0
+expect-log command bar ax 0: label=[^=]+, 1 of [2-9] selected=true
+cra://debug?commandBarAX=1
+expect-log command bar ax 1: label=[^=]+, 2 of [2-9] selected=false
+cra://debug?commandBarMove=1
+expect-log command bar moved: selected=1
+wait 1
+cra://debug?commandBarAX=1
+expect-log command bar ax 1: label=[^=]+, 2 of [2-9] selected=true announced=[^=]+, 2 of [2-9]$
+cra://debug?commandBarAX=0
+expect-log command bar ax 0: label=[^=]+, 1 of [2-9] selected=false
+cra://dismiss
+reject-log fault:

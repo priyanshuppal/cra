@@ -304,11 +304,45 @@ final class CommandBarView: NSView {
                 let incognito = c.store.window().isIncognito || s.tabID.map(c.store.isIncognito(item:)) == true
                 SiteIconLoader.shared.want(.init(url: url, iconKey: s.faviconKey, preset: s.isPresetSite, incognito: incognito), into: favicons)
             }
+            let otherSpace = s.spaceID.flatMap { $0 != c.focusedSpaceID && s.tabID != nil ? c.spaceName($0) : nil }
             r.show(s, icon: icon, fill: CommandBarRowFill(row: i, selected: c.selectedIndex, hovered: c.hoveredIndex), highlight: highlight,
-                   otherSpace: s.spaceID.flatMap { $0 != c.focusedSpaceID && s.tabID != nil ? c.spaceName($0) : nil },
+                   otherSpace: otherSpace,
                    dark: dark, compact: compact, deletable: c.canDelete(row: i))
+            r.speak(CommandBarSpeech.text(title: s.title, subtitle: CommandBarRowView.spokenDetail(s),
+                                          trailing: CommandBarRowView.spokenTrailing(s, otherSpace: otherSpace), index: i, count: items.count),
+                    selected: i == c.selectedIndex)
         }
+        announce(items: items)
         needsLayout = true
+    }
+
+    /// What the bar showed when it last spoke, and that line; nil while the bar is closed.
+    private var spokenShown: CommandBarSpeech.Shown?
+    private var lastAnnouncement: String?
+
+    /// The field keeps the focus, so VoiceOver hears the rows only through an announcement: the selected row's
+    /// label or the completion, when CraCore CommandBarSpeech says one of them changed.
+    private func announce(items: [Suggestion]) {
+        guard controller.isOpen, items.indices.contains(controller.selectedIndex) else {
+            if !controller.isOpen { spokenShown = nil; lastAnnouncement = nil }
+            return
+        }
+        let i = controller.selectedIndex
+        let now = CommandBarSpeech.Shown(selectedIndex: i, selectedID: items[i].id, topID: items.first?.id,
+                                         completion: controller.result.inlineCompletion)
+        let line = CommandBarSpeech.announcement(from: spokenShown, to: now, row: rows[i].accessibilityLabel())
+        spokenShown = now
+        guard let line else { return }
+        lastAnnouncement = line
+        NSAccessibility.post(element: text.field, notification: .announcementRequested,
+                             userInfo: [.announcement: line, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+
+    /// cra://debug?commandBarAX: "label=<label> selected=<true|false> announced=<the last announcement>", or "none".
+    func debugRowAccessibility(_ i: Int) -> String {
+        guard rows.indices.contains(i), !rows[i].isHidden else { return "none" }
+        let r = rows[i]
+        return "label=\(r.accessibilityLabel() ?? "") selected=\(r.isAccessibilitySelected()) announced=\(lastAnnouncement ?? "none")"
     }
 
     override func layout() {
@@ -596,6 +630,8 @@ final class CommandBarRowView: NSView {
     /// Arc's Delete Suggestion (#779): a 24 pt ✕ tile where the arrow goes, on the row the pointer is on.
     private let deleteTile = CommandBarDeleteTile()
     private var shown: (Suggestion, NSImage?, CommandBarRowFill, NSColor, String?, Bool, Bool, Bool)?
+    private var spokenLabel: String?
+    private var spokenSelected = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -622,6 +658,31 @@ final class CommandBarRowView: NSView {
         deleteTile.onPress = { [weak self] in self?.onDelete() }
         _ = ArcTooltipAnchorView.attach(to: deleteTile, help: SuggestionDeletion.tooltip)
         for v in [iconBox, icon, emoji, label, trailing, arrowBox, arrow, deleteTile] as [NSView] { addSubview(v) }
+        // One element for VoiceOver, read as CraCore CommandBarSpeech words it; the ✕ stays a button inside it.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.row)
+    }
+
+    /// The row's VoiceOver label and selection. Rows are reused, so each is set only when it changes.
+    func speak(_ text: String, selected: Bool) {
+        if text != spokenLabel { spokenLabel = text; setAccessibilityLabel(text) }
+        if selected != spokenSelected { spokenSelected = selected; setAccessibilitySelected(selected) }
+    }
+
+    /// The row's address or age, as shown after its title, without the dash.
+    static func spokenDetail(_ s: Suggestion) -> String {
+        let d = detail(s)
+        return d.hasPrefix(" — ") ? String(d.dropFirst(3)) : d
+    }
+
+    /// The action at the row's end: Arc's "Switch to Tab" (with the tab's space when it is another's), "Restore",
+    /// a command's shortcut. A space's emoji is its icon, not an action.
+    static func spokenTrailing(_ s: Suggestion, otherSpace: String?) -> String? {
+        if s.tabID != nil { return otherSpace.map { "Switch to Tab in \($0)" } ?? "Switch to Tab" }
+        switch s.kind {
+        case .switchSpace, .moveToSpace: return nil
+        default: return s.trailing
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }

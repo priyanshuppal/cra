@@ -2376,6 +2376,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 main.debugCommandBarType(chars, edit: dict["mode"] == "edit")
                 return
             }
+            // commandBarMove=<n>: the open bar's selection moved n rows, as ↓ (1) and ↑ (-1) move it.
+            if let n = dict["commandBarMove"].flatMap(Int.init) {
+                main.commandBar.moveSelection(by: n)
+                CraLog.note("command bar moved: selected=\(main.commandBar.selectedIndex)")
+                return
+            }
+            // commandBarAX=<i>: the open bar's i-th row as VoiceOver reads it, "command bar ax <i>: label=<label>
+            // selected=<true|false> announced=<the bar's last announcement>", or "none".
+            if let i = dict["commandBarAX"].flatMap(Int.init) {
+                CraLog.note("command bar ax \(i): \(main.debugCommandBarAccessibility(i))")
+                return
+            }
             // commandBarDeleteKey=1 (#779): ⌥⌘⌫ pressed in the open bar, through the app as a key press goes (the menus'
             // key equivalents first). A debug readout, so the browser window isn't raised over the bar first.
             if dict["commandBarDeleteKey"] != nil {
@@ -3109,6 +3121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             if let label = dict["folderPreviewLit"] {
                 guard let preview = FolderPreviewController.shared.preview else { NSLog("Cra folderPreview %@: closed", label); return }
                 NSLog("Cra folderPreview %@: lit=%@ top=%.0f", label, preview.debugLit.map(String.init).joined(separator: ","), preview.debugTop)
+                return
+            }
+            // sidebarAX=<id, part of a tab's address, or a row's title>: "sidebar ax <match>: label=… value=… selected=…
+            // expanded=…", the shown sidebar row as VoiceOver reads it, or "none".
+            if let match = dict["sidebarAX"] {
+                CraLog.note("sidebar ax \(match): \(SpaceListView.debugRowAccessibility(match, ui: main.sidebarUI) ?? "none")")
                 return
             }
             // rowPoint=<id>: "row point: <x> <y>", where scenario.sh's `click row <id> move` rests the real pointer (#743).
