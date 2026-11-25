@@ -332,7 +332,7 @@ final class FaviconCache {
         return out
     }
 
-    static func fileName(_ key: String) -> String {
+    nonisolated static func fileName(_ key: String) -> String {
         let safe = key.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? String($0) : "_" }.joined()
         return safe + ".png"
     }
