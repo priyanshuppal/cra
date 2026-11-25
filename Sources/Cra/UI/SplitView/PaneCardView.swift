@@ -105,10 +105,11 @@ final class PaneCardView: NSView {
     }
     /// The page is on screen in another window: Arc keeps the tab selected here and shows a
     /// blurred snapshot of it (BlurredItemContent) until this window is used again.
-    var elsewhereSnapshot: NSImage? {
+    /// The thumbnail's JPEG (TabRuntime.snapshotData); a new thumbnail decodes and blurs once.
+    var elsewhereSnapshot: Data? {
         didSet {
-            guard elsewhereSnapshot !== oldValue else { return }
-            elsewhereView.layer?.contents = elsewhereSnapshot.flatMap(Self.blurred)
+            guard elsewhereSnapshot != oldValue else { return }
+            elsewhereView.layer?.contents = BrowserManager.thumbnailImage(elsewhereSnapshot).flatMap(Self.blurred)
         }
     }
     var showsElsewhere = false { didSet { elsewhereView.isHidden = !showsElsewhere } }

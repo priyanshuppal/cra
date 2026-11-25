@@ -729,7 +729,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         let liveFocus = selected.flatMap { elsewhere.contains($0) ? nil : $0 }
         for c in shell.paneCards {
             c.showsElsewhere = elsewhere.contains(c.tabID)
-            c.elsewhereSnapshot = c.showsElsewhere ? app.runtime(for: c.tabID)?.snapshot : nil
+            c.elsewhereSnapshot = c.showsElsewhere ? app.runtime(for: c.tabID)?.snapshotData : nil
         }
         sidebarUI.splitPaneIDs = panes.count > 1 ? panes : []
         // Arc keeps the find bar with the tab it was opened on: it goes when you switch away (before
@@ -5273,7 +5273,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
         for current in browsers.visibleTabIDs {
             browsers.captureSnapshot(current) { [weak self] in
                 guard let self else { return }
-                self.tabSwitcher.updateSnapshot(current, self.browsers.runtime(for: current)?.snapshot)
+                self.tabSwitcher.updateSnapshot(current, BrowserManager.thumbnailImage(self.browsers.runtime(for: current)?.snapshotData))
             }
         }
     }
@@ -5283,13 +5283,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, BrowserM
             let id = card.opens
             guard let it = store.item(id), let tab = it.tab else { return nil }
             let space = allSpaces ? store.spaceID(ofItem: id, window: windowID).flatMap(store.space) : nil
-            var item = TabSwitcher.Item(id: id, title: it.displayTitle, iconKey: tab.iconKey, snapshot: browsers.runtime(for: id)?.snapshot,
+            var item = TabSwitcher.Item(id: id, title: it.displayTitle, iconKey: tab.iconKey, snapshot: BrowserManager.thumbnailImage(browsers.runtime(for: id)?.snapshotData),
                                         space: space.map { TabSwitcher.SpaceLabel(title: $0.title, icon: SpaceMenuIcon.image(for: $0)) })
             if card.isSplit {
                 let factors = SplitPaneLayout.normalizedFactors(ids: card.panes, stored: store.item(card.id)?.split?.widthFactors ?? [:])
                 item.panes = card.panes.compactMap { pid in
                     guard let p = store.item(pid), let t = p.tab else { return nil }
-                    return TabSwitcher.Pane(id: pid, title: p.displayTitle, iconKey: t.iconKey, snapshot: browsers.runtime(for: pid)?.snapshot,
+                    return TabSwitcher.Pane(id: pid, title: p.displayTitle, iconKey: t.iconKey, snapshot: BrowserManager.thumbnailImage(browsers.runtime(for: pid)?.snapshotData),
                                             width: factors[pid] ?? 1 / CGFloat(card.panes.count))
                 }
             }
