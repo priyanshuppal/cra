@@ -919,6 +919,7 @@ final class TabRowView: SidebarRowView, ArcTooltipTarget, NSTextFieldDelegate {
         if (m.subtitle == nil) != (model?.subtitle == nil) || m.depth != model?.depth || m.navigatedAway != model?.navigatedAway {
             needsLayout = true
         }
+        let old = model
         model = m
         renameSweep.update(effectToken: m.tidyRename?.token, editing: m.editing)
         if overIcon, !canReset { overIcon = false; stopWatchingFlags(); needsLayout = true }
@@ -928,6 +929,10 @@ final class TabRowView: SidebarRowView, ArcTooltipTarget, NSTextFieldDelegate {
         titleLabel.textColor = colors.textPrimary
         refreshSubtitle()
         setAccessibilityLabel(m.title)
+        // What VoiceOver reads after the title (CraCore SidebarRowAccessibility); rows are reused, so set on change.
+        let ax = SidebarRowAccessibility.value(selected: m.selected, pinned: m.pinned, audible: m.audible, muted: m.muted, unread: m.unread)
+        if accessibilityValue() as? String != ax { setAccessibilityValue(ax) }
+        if old?.selected != m.selected { setAccessibilitySelected(m.selected) }
         if m.editing != (renameField != nil) { m.editing ? beginRename(m.renameText) : endRename() }
         // The keyboard's ring wins over developer mode's; they differ in tone and dash length.
         let ring: Bool? = m.focusRing ? false : (m.developerMode && m.selected ? true : nil)
@@ -1599,6 +1604,7 @@ final class FolderRowView: SidebarRowView, NSTextFieldDelegate {
         guard m != model else { return }
         // The same folder opening or closing turns its glyph; a row taking another folder doesn't.
         let toggled = model.map { $0.id == m.id && $0.expanded != m.expanded } ?? false
+        if model?.expanded != m.expanded { setAccessibilityExpanded(m.expanded) }
         model = m
         let emblem: FolderEmblem? = m.live
             ? m.liveIcon.map { FolderEmblem(image: $0, coloring: .template) }
@@ -1816,6 +1822,9 @@ final class SplitRowView: SidebarRowView, NSTextFieldDelegate, ArcTooltipTarget 
         iconView.imageScaling = .scaleNone
         addSubview(iconView)
         addSubview(titleLabel)
+        // One element for VoiceOver, as a tab's row is; its panes stay inside it.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
     }
 
     /// Where the pane count or the icon sits, for the icon picker's arrow.
@@ -1826,6 +1835,13 @@ final class SplitRowView: SidebarRowView, NSTextFieldDelegate, ArcTooltipTarget 
     func apply(_ m: SplitRowModel) {
         guard m != model else { return }
         if m.named != model?.named { needsLayout = true }
+        // VoiceOver: the split's name, or its panes' titles; whether it is open and pinned. Set on change, rows are reused.
+        let label = m.named ? m.shownTitle : m.cells.map(\.title).joined(separator: ", ")
+        if label != accessibilityLabel() { setAccessibilityLabel(label) }
+        if model?.selected != m.selected || model?.today != m.today {
+            setAccessibilityValue(SidebarRowAccessibility.value(selected: m.selected, pinned: !m.today))
+            setAccessibilitySelected(m.selected)
+        }
         model = m
         if cells.map(\.cellID) != m.cells.map(\.id) {
             cells.forEach { $0.removeFromSuperview() }

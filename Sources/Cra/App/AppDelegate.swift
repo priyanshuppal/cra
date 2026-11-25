@@ -2997,6 +2997,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 NSLog("Cra folderPreview %@: lit=%@ top=%.0f", label, preview.debugLit.map(String.init).joined(separator: ","), preview.debugTop)
                 return
             }
+            // sidebarAX=<id, part of a tab's address, or a row's title>: "sidebar ax <match>: label=… value=… selected=…
+            // expanded=…", the shown sidebar row as VoiceOver reads it, or "none".
+            if let match = dict["sidebarAX"] {
+                CraLog.note("sidebar ax \(match): \(SpaceListView.debugRowAccessibility(match, ui: main.sidebarUI) ?? "none")")
+                return
+            }
             // rowPoint=<id>: "row point: <x> <y>", where scenario.sh's `click row <id> move` rests the real pointer (#743).
             if let r = dict["rowPoint"] {
                 guard let id = UUID(uuidString: r), let p = SpaceListView.debugRowPoint(id, ui: main.sidebarUI) else {
