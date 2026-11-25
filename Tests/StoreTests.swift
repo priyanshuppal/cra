@@ -1690,12 +1690,14 @@ enum StoreTests {
         store.applyLiveResults([one], to: folder.id, ssoOrganizations: [])
         let gone = store.children(of: folder.id).first { $0.tab?.liveItemURL == two.url }
         expect(gone?.tab?.liveGoneAt == clock.now, "a pull request that left the results is marked gone now")
+        expect(store.hasLiveItemsWaitingToExpire, "it waits to expire, so the pass keeps running in the background")
         clock.advance(by: 3599)
         store.expireLiveItems(olderThan: 3600)
         expect(store.children(of: folder.id).count == 2, "it stays through the grace period")
         clock.advance(by: 1)
         store.expireLiveItems(olderThan: 3600)
         expect(store.children(of: folder.id).map(\.tab?.liveItemURL) == [one.url], "and goes when it ends")
+        expect(!store.hasLiveItemsWaitingToExpire, "nothing is left waiting, so the background pass can stop")
         expect(store.integrityProblems().isEmpty, "live folder changes keep the sidebar sound")
     }
 

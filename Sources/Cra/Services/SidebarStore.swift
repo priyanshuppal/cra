@@ -2222,18 +2222,28 @@ final class SidebarStore {
     /// Live tabs whose pull request left the results longer than `age` ago go; one open in a
     /// window stays until it isn't.
     func expireLiveItems(olderThan age: TimeInterval) {
-        let open = Set(prefs.windows.flatMap { $0.selectedTabPerSpace.values })
         var changed = false
-        for folder in liveFolders {
-            for c in tabs(under: folder.id) where !open.contains(c.id) {
-                guard let tab = c.tab, let item = tab.liveItemURL, LiveItemPage.shows(tab.url, item: item),
-                      let goneAt = tab.liveGoneAt, clock.now.timeIntervalSince(goneAt) >= age else { continue }
-                detach(c.id)
-                items[c.id] = nil
-                changed = true
-            }
+        for (id, goneAt) in liveItemsWaitingToExpire() where clock.now.timeIntervalSince(goneAt) >= age {
+            detach(id)
+            items[id] = nil
+            changed = true
         }
         if changed { touch() }
+    }
+
+    /// Whether a live tab that left its folder's results is waiting to go: the live folder pass
+    /// keeps running for it while Cra is in the background (LiveFolderPass).
+    var hasLiveItemsWaitingToExpire: Bool { !liveItemsWaitingToExpire().isEmpty }
+
+    private func liveItemsWaitingToExpire() -> [(id: UUID, goneAt: Date)] {
+        let open = Set(prefs.windows.flatMap { $0.selectedTabPerSpace.values })
+        return liveFolders.flatMap { folder in
+            tabs(under: folder.id).compactMap { c -> (id: UUID, goneAt: Date)? in
+                guard !open.contains(c.id), let tab = c.tab, let item = tab.liveItemURL, LiveItemPage.shows(tab.url, item: item),
+                      let goneAt = tab.liveGoneAt else { return nil }
+                return (c.id, goneAt)
+            }
+        }
     }
 
     func applyLiveFailure(_ error: LiveFolderError, to folderID: UUID, context: LiveRequestContext? = nil) {
