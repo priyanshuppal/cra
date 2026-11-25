@@ -127,6 +127,8 @@ final class SpaceListView: NSView, NSDraggingSource {
     /// The active row at the last build: a change scrolls the new one into view.
     private var lastActive: RowKey?
     let autoscroller = DragAutoscroller()
+    /// How long a dragged tab has stayed on one tab's middle: the split offer waits for it.
+    private var splitDwell = SidebarSplitDwell()
     let edgePager = SidebarEdgePager()
     private static let all = NSHashTable<SpaceListView>.weakObjects()
 
@@ -1287,7 +1289,17 @@ final class SpaceListView: NSView, NSDraggingSource {
         }
         autoscroller.update()
         guard let id = ui.draggingID, store.item(id) != nil else { return [] }
-        let drop = resolve(dragged: id, at: document.convert(info.draggingLocation, from: nil))
+        // A tab's middle offers a split only once the drag has stayed on it (Arc's
+        // splitDropTargetDelaySatisfied), so a reorder down the list doesn't open the preview and
+        // tick on every row it crosses. AppKit's periodic updates keep this ticking while the pointer
+        // rests; they carry no event, so the time is the system uptime events are stamped with.
+        let now = ProcessInfo.processInfo.systemUptime
+        var splitRow: UUID?
+        let drop = resolve(dragged: id, at: document.convert(info.draggingLocation, from: nil)) { row in
+            splitRow = row
+            return self.splitDwell.sample(row: row, at: now)
+        }
+        if splitRow == nil { splitDwell.reset() }
         if drop != ui.listDrop {
             ui.listDrop = drop
             // A tick when a row starts offering to combine, so the change of meaning is felt as well as seen.
@@ -1304,6 +1316,7 @@ final class SpaceListView: NSView, NSDraggingSource {
 
     func dragExited() {
         autoscroller.stop()
+        splitDwell.reset()
         if ui.listDrop != nil { ui.listDrop = nil }
     }
 
@@ -1369,8 +1382,10 @@ final class SpaceListView: NSView, NSDraggingSource {
     /// takes the item, a tab, pinned or not, makes a split in its place (the dragged tab goes on
     /// the side of the row it hovers), a split row takes a pane. A link (`SidebarListDrop.link`)
     /// combines with nothing: a tab's or split's middle takes nothing, a folder's middle takes it in
-    /// at the top (Arc 1.173.1, measured on a closed folder).
-    func resolve(dragged id: UUID, at p: CGPoint) -> SidebarListDrop {
+    /// at the top (Arc 1.173.1, measured on a closed folder). `splitReady` says whether the drag has
+    /// stayed on a tab's middle long enough to offer a split there (`SidebarSplitDwell`); until it has,
+    /// the row's halves insert before and after it.
+    func resolve(dragged id: UUID, at p: CGPoint, splitReady: (UUID) -> Bool = { _ in true }) -> SidebarListDrop {
         guard let space = store.space(spaceID) else { return SidebarListDrop(draggedID: id) }
         let items = rows.filter { $0.itemID != nil }
         let group = ui.group(for: id, in: store)
@@ -1394,7 +1409,7 @@ final class SpaceListView: NSView, NSDraggingSource {
             } else if middle && isTab && item.isTab {
                 // Arc combines two tabs into a split wherever the target sits (#191), in the
                 // target's place: on a pinned tab it is a pinned split (#180).
-                target = .split(with: rid, leading: p.x < r.frame.midX)
+                target = splitReady(rid) ? .split(with: rid, leading: p.x < r.frame.midX) : (f < 0.5 ? before : after)
             } else if middle && isTab && item.isSplit {
                 // A full split takes no more (#498): Arc's four, or eight with more panes on.
                 target = item.children.count < store.splitPaneLimit ? .into(rid) : nil
