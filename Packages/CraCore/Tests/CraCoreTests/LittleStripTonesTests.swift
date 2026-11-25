@@ -48,4 +48,17 @@ struct LittleStripTonesTests {
         #expect(Self.bytes(light.spaceName) == [253, 243, 208])
         #expect(light.spaceName != dark.spaceName)
     }
+
+    /// The address pill and its hover: Arc 1.174.3's LittleBrowserCommandBarPlaceholderBackground and
+    /// …Hovered (ARC_LittleBrowser.bundle's asset catalogue, Display P3). Cra guessed white 0.09 and 0.14.
+    @Test(arguments: [
+        (true, false, RGB(0.98, 0.984, 1), 0.10),
+        (true, true, RGB(0.98, 0.984, 1), 0.15),
+        (false, false, RGB(0.055, 0.059, 0.063), 0.06),
+        (false, true, RGB(0.055, 0.059, 0.063), 0.10),
+    ])
+    func thePillIsArcsCatalogueWash(dark: Bool, hovered: Bool, ink: RGB, alpha: Double) {
+        let wash = hovered ? LittleStripTones.pillHover(dark: dark) : LittleStripTones.pill(dark: dark)
+        #expect(wash == LittleStripTones.Wash(p3: ink, alpha: alpha))
+    }
 }
