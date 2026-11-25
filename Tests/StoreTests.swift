@@ -88,6 +88,8 @@ enum StoreTests {
         historyFromBeforeProfilesTakesThemFromChromium()
         persistenceFaults()
         incognitoStaysOffDisk()
+        sidebarDocumentBuiltOncePerSave()
+        debouncedSidebarSaveWritesTheLatestState()
         chromePagesLeaveIncognito()
         incognitoKeepsItsSpacesProfile()
         mcpExcludesPrivateTabs()
@@ -2298,6 +2300,62 @@ enum StoreTests {
         expect(store.integrityProblems().isEmpty, "and the sidebar stays sound")
     }
 
+    /// sidebar.json's document is built when it is saved, not on every change: a loading page
+    /// reports its title and address dozens of times, and each build walked every item, 1–3 ms
+    /// on a 2,600-item sidebar (#214). What the save writes is the same document.
+    @MainActor
+    private static func sidebarDocumentBuiltOncePerSave() {
+        let store = AppComposition(clock: ManualScheduler()).store
+        let tab = store.createTab(url: "https://example.com/builds")
+        let before = store.documentBuilds
+        for i in 1...50 { store.updateTab(tab.id, url: "https://example.com/builds/\(i)", title: "Build \(i)") }
+        expect(store.documentBuilds == before, "50 reports from a loading page build no document on the spot")
+        store.saveAll()
+        expect(store.documentBuilds == before + 1, "saving builds it once")
+        let reloaded = AppComposition(clock: ManualScheduler()).store
+        expect(reloaded.item(tab.id)?.tab?.url == "https://example.com/builds/50", "the last address is what was saved")
+        expect(comparable(reloaded.document) == comparable(store.document), "and a relaunch reads back the same document")
+    }
+
+    /// A debounced save that fires builds the document once, and then, from what the store holds
+    /// at that moment: a change made after the last save call is written too.
+    @MainActor
+    private static func debouncedSidebarSaveWritesTheLatestState() {
+        let store = AppComposition(clock: ManualScheduler()).store
+        let tab = store.createTab(url: "https://example.com/debounced")
+        store.saveAll()
+        let before = store.documentBuilds
+        for i in 1...20 { store.updateTab(tab.id, title: "Debounced \(i)") }
+        // Marking a tab unread saves nothing by itself.
+        store.markUnread(tab.id)
+        var deadline = Date().addingTimeInterval(6)
+        while store.documentBuilds == before && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        expect(store.documentBuilds == before + 1, "the debounce ends in one build, not one per report")
+        func saved() -> SidebarItem? {
+            let d = JSONDecoder()
+            d.dateDecodingStrategy = .iso8601
+            let doc = try? d.decode(SidebarDocument.self, from: Data(contentsOf: AppPaths.file("sidebar.json")))
+            return doc?.items.first { $0.id == tab.id }
+        }
+        deadline = Date().addingTimeInterval(3)
+        while saved()?.isUnread != true && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        expect(saved()?.tab?.savedTitle == "Debounced 20" && saved()?.isUnread == true,
+               "what is written is the store as the debounce ends, not as the first report left it")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        expect(store.documentBuilds == before + 1, "and nothing builds it again")
+    }
+
+    /// A document as sidebar.json holds it: items in a fixed order (they come out of a dictionary)
+    /// and dates to the second, so two documents compare by what they save.
+    private static func comparable(_ document: SidebarDocument) -> Data {
+        var d = document
+        d.items.sort { $0.id.uuidString < $1.id.uuidString }
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        e.dateEncodingStrategy = .iso8601
+        return (try? e.encode(d)) ?? Data()
+    }
+
     /// Incognito tabs never reach sidebar.json (#46's review: updateTab saved every item), and
     /// what older versions left there goes on load instead of turning into a normal tab.
     @MainActor
@@ -2311,10 +2369,15 @@ enum StoreTests {
         expect(store.item(secret.id)?.tab?.themeColor == nil, "an incognito tab keeps no toolbar colour")
         store.setThemeColor(normal.id, "#203040")
         store.updateTab(normal.id, title: "Normal")
-        // Both save on a 2 s debounce on the persistence queue, not on the clock.
-        Thread.sleep(forTimeInterval: 2.5)
-        // JSONEncoder writes "/" as "\/".
-        let saved = ((try? String(contentsOf: AppPaths.file("sidebar.json"), encoding: .utf8)) ?? "").replacingOccurrences(of: "\\/", with: "/")
+        // Both save on a 2 s debounce on the main queue, not on the clock, and are written on the
+        // persistence queue (#214): wait for the file to have them.
+        func savedSidebar() -> String {
+            // JSONEncoder writes "/" as "\/".
+            ((try? String(contentsOf: AppPaths.file("sidebar.json"), encoding: .utf8)) ?? "").replacingOccurrences(of: "\\/", with: "/")
+        }
+        let deadline = Date().addingTimeInterval(6)
+        while !savedSidebar().contains("#203040") && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        let saved = savedSidebar()
         expect(saved.contains("https://example.com/normal") && saved.contains("#203040"), "a normal tab and its toolbar colour are saved")
         expect(!saved.contains("example.com/secret") && !saved.contains("Secret"), "nothing of the incognito tab is")
         let reloaded = AppComposition(clock: ManualScheduler()).store

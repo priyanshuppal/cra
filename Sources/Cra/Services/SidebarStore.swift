@@ -241,15 +241,32 @@ final class SidebarStore {
     }
 
     func save() {
-        sidebarFile.save(document)
+        sidebarFile.save(documentToSave())
+        saveArchiveIfChanged()
+    }
+
+    /// Saves the sidebar `delay` after the last change, building its document only then (#214):
+    /// every select and every title or address a loading page reports lands here.
+    private func saveSoon(delay: TimeInterval = 0.4) {
+        sidebarFile.save(delay: delay) { [weak self] in self?.documentToSave() }
+    }
+
+    private func saveArchiveIfChanged() {
         if archiveChanged {
             archiveChanged = false
             archiveFile.save(archive)
         }
     }
 
+    /// How many times sidebar.json's document was built to be saved (tests: once per save, #214).
+    @ObservationIgnored private(set) var documentBuilds = 0
+    private func documentToSave() -> SidebarDocument {
+        documentBuilds += 1
+        return document
+    }
+
     func saveAll() {
-        sidebarFile.saveNow(document)
+        sidebarFile.saveNow(documentToSave())
         archiveFile.saveNow(archive)
         prefsStore.saveNow(prefs.withoutIncognito)
         settingsStore.saveNow(settings)
@@ -260,7 +277,8 @@ final class SidebarStore {
     private func touch() {
         pruneEmptyGroups()
         revision &+= 1
-        save()
+        saveSoon()
+        saveArchiveIfChanged()
         changedHere()
     }
 
@@ -828,7 +846,7 @@ final class SidebarStore {
         // empty pane; the rows and the toolbar observe the tab themselves.
         if it.isEmptyTab != wasEmpty { revision &+= 1 }
         // The document leaves incognito windows' tabs out.
-        sidebarFile.save(document, delay: 2)
+        saveSoon(delay: 2)
     }
 
     /// The tab's page loaded its own icon, cached under `key` (#211).
@@ -838,7 +856,7 @@ final class SidebarStore {
         it.data = .tab(t)
         items[id] = it
         // Rows and the toolbar observe the tab; the window's layout doesn't change.
-        sidebarFile.save(document, delay: 2)
+        saveSoon(delay: 2)
     }
 
     /// Only saved: nothing on screen reads it back until the tab's page is made again. Incognito
@@ -848,7 +866,7 @@ final class SidebarStore {
         t.themeColor = hex
         it.data = .tab(t)
         items[id] = it
-        sidebarFile.save(document, delay: 2)
+        saveSoon(delay: 2)
     }
 
     func markUnread(_ id: UUID, _ unread: Bool = true) {
