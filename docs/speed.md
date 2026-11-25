@@ -15,6 +15,12 @@ caffeinate -d scripts/perf/rounds.sh build/perf/gate 2 before=/tmp/before/Cra.ap
 python3 scripts/perf/report.py build/perf/gate/*-[0-9]*
 ```
 
+- **Memory by process type.** The idle launch also lists every process's footprint and `--type` at 1
+  tab (`procs1.txt`, taken right after the 1-tab memory reading and before the idle CPU window, so it
+  doesn't disturb it) and back at 1 tab (`procs-back1.txt`, after the last reading). report.py sums
+  each per type (browser, renderer, gpu-process, `utility <sub-type>`, other) as "processes 1 tab: …"
+  and "processes back at 1 tab: …", plus the renderer count. The 20-tab list is `procs20.txt` (not in
+  the table). `MODES=idle scripts/perf/bench.sh build/Cra.app build/perf/<label>`.
 - **Interleave, and compare ranges.** The same build moves 10–20 % between runs on a Mac in use
   (Trend Micro, other builds, agents). Runs of the two builds alternate, and a row is different only
   when the min–max ranges separate. One run that disagrees with another is noise, not a finding.

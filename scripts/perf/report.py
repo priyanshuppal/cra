@@ -1,7 +1,23 @@
 # report.py <run dir>...: scripts/perf/bench.sh runs as a table, the median (min–max) per build.
 # Runs are grouped by name before the last "-": before-1, before-2 and after-1 give "before" and "after".
 # Call a row different only when the ranges separate; overlapping ranges are noise (docs/speed.md).
-import datetime, glob, json, os, statistics as st, sys
+import datetime, glob, json, os, re, statistics as st, sys
+
+
+def procs(path, label, out):
+    """Sums procs.sh's lines ("<MB> MB  pid <pid> --type=<t> <utility sub-type>") per process type."""
+    mb = {"browser": 0, "renderer": 0, "gpu-process": 0}
+    n = 0
+    for line in open(path):
+        m = re.match(r"(\d+) MB\s+pid \d+ --type=(\S+)\s*(\S*)", line)
+        if not m:
+            continue
+        kind = m[2] if m[2] in mb else f"utility {m[3]}".strip() if m[2] == "utility" else "other"
+        mb[kind] = mb.get(kind, 0) + int(m[1])
+        n += kind == "renderer"
+    for kind, v in mb.items():
+        out[f"processes {label}: {kind} (MB)"] = v
+    out[f"processes {label}: renderers (n)"] = n
 
 
 def load(root):
@@ -18,6 +34,9 @@ def load(root):
         for k in ["mem1", "mem10", "mem20", "mem20settled", "memback1"]:
             if k in res:
                 out[f"memory {k[3:]} (MB)"] = res[k]["m"]["fpMB"]
+        for f, label in [("procs1", "1 tab"), ("procs-back1", "back at 1 tab")]:
+            if os.path.exists(f"{root}/idle/{f}.txt"):
+                procs(f"{root}/idle/{f}.txt", label, out)
         out["idle CPU 1 tab (%)"], out["idle wakeups 1 tab (/s)"] = rate("idle1")
         out["idle CPU 20 tabs (%)"], out["idle wakeups 20 tabs (/s)"] = rate("idle20")
     lat = f"{root}/latency"
