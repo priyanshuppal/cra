@@ -2316,6 +2316,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
                 return
             }
+            // commandBarType=<chars>[&mode=edit]: ⌘T (⌘L) and the characters typed into the bar in the same turn, then
+            // "command bar query: <q> field: <f>". The first keys of a quick ⌘T g i t ⏎ were lost.
+            if let chars = dict["commandBarType"] {
+                main.debugCommandBarType(chars, edit: dict["mode"] == "edit")
+                return
+            }
             // commandBarDeleteKey=1 (#779): ⌥⌘⌫ pressed in the open bar, through the app as a key press goes (the menus'
             // key equivalents first). A debug readout, so the browser window isn't raised over the bar first.
             if dict["commandBarDeleteKey"] != nil {

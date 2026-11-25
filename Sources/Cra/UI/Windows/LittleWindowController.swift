@@ -1293,6 +1293,8 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
         if commandPanel.parent == nil { window.addChildWindow(commandPanel, ordered: .above) }
         commandBarOpenedAt = Date()
         commandPanel.makeKeyAndOrderFront(nil)
+        // The field takes the keys in this turn, as in the main window's bar.
+        commandHost.focusField()
         observeCommandBar()
     }
 
@@ -1335,6 +1337,8 @@ final class LittleWindowController: NSWindowController, NSWindowDelegate, @preco
     private func hideCommandPanel() {
         if commandPanel.parent != nil { window?.removeChildWindow(commandPanel) }
         let panel = commandPanel!
+        // The field editor lets go of this session's text, which the next open's first key was typed onto.
+        panel.makeFirstResponder(nil)
         let bar = commandBar
         // Not tied to self: the window may be closing (promotion), and the panel must still go.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {

@@ -36,6 +36,24 @@ final class CommandTextField {
         }
     }
 
+    /// The bar just opened: the field takes the keys in this same turn, with the text it opened with.
+    /// Left to `update`, that took three main-queue turns after the panel was key, and a key typed in
+    /// between went nowhere (first open) or onto the last session's text, then was wiped when the new
+    /// text landed: ⌘T g i t ⏎ lost the g. The deferred `update` then finds this version applied and
+    /// leaves what was typed alone.
+    func focusNow() {
+        let coord = coordinator
+        coord.appliedVersion = controller.fieldTextVersion
+        coord.appliedPreview = controller.previewVersion
+        coord.suppressChange = true
+        field.stringValue = controller.fieldText
+        coord.lastTyped = controller.fieldText
+        coord.pendingCompletion = nil
+        coord.suppressChange = false
+        guard let window = field.window, window.makeFirstResponder(field), let editor = field.currentEditor() else { return }
+        if controller.fieldTextSelected { editor.selectAllShowingStart() } else { editor.selectedRange = NSRange(location: (field.stringValue as NSString).length, length: 0) }
+    }
+
     private static func makeField(controller: CommandBarController, coordinator: Coordinator) -> NSTextField {
         let field = NSTextField(string: controller.fieldText)
         field.isBordered = false
